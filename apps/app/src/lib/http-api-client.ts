@@ -702,6 +702,16 @@ export class HttpApiClient implements ElectronAPI {
     },
   };
 
+  // Templates API
+  templates = {
+    clone: (repoUrl: string, projectName: string, parentDir: string): Promise<{
+      success: boolean;
+      projectPath?: string;
+      projectName?: string;
+      error?: string;
+    }> => this.post("/api/templates/clone", { repoUrl, projectName, parentDir }),
+  };
+
   // Sessions API
   sessions = {
     list: (includeArchived?: boolean): Promise<{

@@ -29,6 +29,7 @@ import { createModelsRoutes } from "./routes/models.js";
 import { createSpecRegenerationRoutes } from "./routes/spec-regeneration.js";
 import { createRunningAgentsRoutes } from "./routes/running-agents.js";
 import { createWorkspaceRoutes } from "./routes/workspace.js";
+import { createTemplatesRoutes } from "./routes/templates.js";
 import { AgentService } from "./services/agent-service.js";
 import { FeatureLoader } from "./services/feature-loader.js";
 
@@ -112,6 +113,7 @@ app.use("/api/models", createModelsRoutes());
 app.use("/api/spec-regeneration", createSpecRegenerationRoutes(events));
 app.use("/api/running-agents", createRunningAgentsRoutes());
 app.use("/api/workspace", createWorkspaceRoutes());
+app.use("/api/templates", createTemplatesRoutes());
 
 // Create HTTP server
 const server = createServer(app);
