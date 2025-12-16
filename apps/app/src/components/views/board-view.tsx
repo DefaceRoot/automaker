@@ -50,6 +50,9 @@ import {
   useSuggestionsState,
 } from "./board-view/hooks";
 
+// Stable empty array to avoid infinite loop in selector
+const EMPTY_WORKTREES: ReturnType<ReturnType<typeof useAppStore.getState>['getWorktrees']> = [];
+
 export function BoardView() {
   const {
     currentProject,
@@ -338,7 +341,11 @@ export function BoardView() {
   // Use drag and drop hook
   // Get current worktree path and branch for filtering features
   const currentWorktreePath = currentProject ? getCurrentWorktree(currentProject.path) : null;
-  const worktrees = useAppStore((s) => currentProject ? s.getWorktrees(currentProject.path) : []);
+  const worktreesByProject = useAppStore((s) => s.worktreesByProject);
+  const worktrees = useMemo(
+    () => (currentProject ? (worktreesByProject[currentProject.path] ?? EMPTY_WORKTREES) : EMPTY_WORKTREES),
+    [currentProject, worktreesByProject]
+  );
   const currentWorktreeBranch = currentWorktreePath
     ? worktrees.find(w => w.path === currentWorktreePath)?.branch || null
     : null;
