@@ -1,7 +1,7 @@
 import { Label } from "@/components/ui/label";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAppStore, type AgentModel } from "@/store/app-store";
+import { useAppStore } from "@/store/app-store";
 import { CLAUDE_MODELS } from "@/components/views/board-view/shared/model-constants";
 
 export function AIEnhancementSection() {
@@ -38,7 +38,7 @@ export function AIEnhancementSection() {
               return (
                 <button
                   key={id}
-                  onClick={() => setEnhancementModel(id as AgentModel)}
+                  onClick={() => setEnhancementModel(id)}
                   className={cn(
                     "group flex flex-col items-start gap-2 px-4 py-4 rounded-xl text-left",
                     "transition-all duration-200 ease-out",

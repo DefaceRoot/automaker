@@ -14,7 +14,7 @@ import {
   isValidEnhancementMode,
   type EnhancementMode,
 } from "../../../lib/enhancement-prompts.js";
-import { resolveModelString } from "../../../lib/model-resolver.js";
+import { resolveModelString, CLAUDE_MODEL_MAP } from "../../../lib/model-resolver.js";
 
 const logger = createLogger("EnhancePrompt");
 
@@ -68,7 +68,7 @@ async function extractTextFromStream(
     if (msg.type === "assistant" && msg.message?.content) {
       for (const block of msg.message.content) {
         if (block.type === "text" && block.text) {
-          responseText = block.text;
+          responseText += block.text;
         }
       }
     } else if (msg.type === "result" && msg.subtype === "success") {
@@ -141,7 +141,7 @@ export function createEnhanceHandler(): (
       const userPrompt = buildUserPrompt(validMode, trimmedText, true);
 
       // Resolve the model - use the passed model, default to sonnet for quality
-      const resolvedModel = resolveModelString(model, "claude-sonnet-4-20250514");
+      const resolvedModel = resolveModelString(model, CLAUDE_MODEL_MAP.sonnet);
 
       logger.debug(`Using model: ${resolvedModel}`);
 

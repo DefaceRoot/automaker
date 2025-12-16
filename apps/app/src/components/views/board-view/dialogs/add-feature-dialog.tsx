@@ -165,7 +165,8 @@ export function AddFeatureDialog({
       );
 
       if (result?.success && result.enhancedText) {
-        setNewFeature(prev => ({ ...prev, description: result.enhancedText! }));
+        const enhancedText = result.enhancedText;
+        setNewFeature(prev => ({ ...prev, description: enhancedText }));
         toast.success("Description enhanced!");
       } else {
         toast.error(result?.error || "Failed to enhance description");
@@ -242,7 +243,7 @@ export function AddFeatureDialog({
           </TabsList>
 
           {/* Prompt Tab */}
-          <TabsContent value="prompt" className="space-y-4 overflow-y-auto">
+          <TabsContent value="prompt" className="space-y-4 overflow-y-auto cursor-default">
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <DescriptionImageDropZone
@@ -263,45 +264,45 @@ export function AddFeatureDialog({
                 autoFocus
                 error={descriptionError}
               />
-              <div className="flex items-center gap-3 mt-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-[180px] justify-between">
-                      {enhancementMode === 'improve' && 'Improve Clarity'}
-                      {enhancementMode === 'technical' && 'Add Technical Details'}
-                      {enhancementMode === 'simplify' && 'Simplify'}
-                      {enhancementMode === 'acceptance' && 'Add Acceptance Criteria'}
-                      <ChevronDown className="w-4 h-4 ml-2" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem onClick={() => setEnhancementMode('improve')}>
-                      Improve Clarity
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setEnhancementMode('technical')}>
-                      Add Technical Details
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setEnhancementMode('simplify')}>
-                      Simplify
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setEnhancementMode('acceptance')}>
-                      Add Acceptance Criteria
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+            </div>
+            <div className="flex w-fit items-center gap-3 select-none cursor-default">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-[180px] justify-between">
+                    {enhancementMode === 'improve' && 'Improve Clarity'}
+                    {enhancementMode === 'technical' && 'Add Technical Details'}
+                    {enhancementMode === 'simplify' && 'Simplify'}
+                    {enhancementMode === 'acceptance' && 'Add Acceptance Criteria'}
+                    <ChevronDown className="w-4 h-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => setEnhancementMode('improve')}>
+                    Improve Clarity
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setEnhancementMode('technical')}>
+                    Add Technical Details
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setEnhancementMode('simplify')}>
+                    Simplify
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setEnhancementMode('acceptance')}>
+                    Add Acceptance Criteria
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleEnhanceDescription}
-                  disabled={!newFeature.description.trim() || isEnhancing}
-                  loading={isEnhancing}
-                >
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Enhance with AI
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleEnhanceDescription}
+                disabled={!newFeature.description.trim() || isEnhancing}
+                loading={isEnhancing}
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Enhance with AI
+              </Button>
             </div>
             <div className="space-y-2">
               <Label htmlFor="category">Category (optional)</Label>
@@ -318,7 +319,7 @@ export function AddFeatureDialog({
           </TabsContent>
 
           {/* Model Tab */}
-          <TabsContent value="model" className="space-y-4 overflow-y-auto">
+          <TabsContent value="model" className="space-y-4 overflow-y-auto cursor-default">
             {/* Show Advanced Options Toggle */}
             {showProfilesOnly && (
               <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
@@ -381,7 +382,7 @@ export function AddFeatureDialog({
           </TabsContent>
 
           {/* Testing Tab */}
-          <TabsContent value="testing" className="space-y-4 overflow-y-auto">
+          <TabsContent value="testing" className="space-y-4 overflow-y-auto cursor-default">
             <TestingTabContent
               skipTests={newFeature.skipTests}
               onSkipTestsChange={(skipTests) =>
