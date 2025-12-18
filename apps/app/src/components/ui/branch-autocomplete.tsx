@@ -11,6 +11,7 @@ interface BranchAutocompleteProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  error?: boolean;
   "data-testid"?: string;
 }
 
@@ -21,6 +22,7 @@ export function BranchAutocomplete({
   placeholder = "Select a branch...",
   className,
   disabled = false,
+  error = false,
   "data-testid": testId,
 }: BranchAutocompleteProps) {
   // Always include "main" at the top of suggestions
@@ -43,6 +45,7 @@ export function BranchAutocomplete({
       emptyMessage="No branches found."
       className={className}
       disabled={disabled}
+      error={error}
       icon={GitBranch}
       allowCreate
       createLabel={(v) => `Create "${v}"`}

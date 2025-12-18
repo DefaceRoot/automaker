@@ -212,16 +212,20 @@ export function ContextView() {
         // Write text file with content (or empty if no content)
         await api.writeFile(filePath, newFileContent);
       }
-
+      
+      // Only reload files on success
+      await loadContextFiles();
+    } catch (error) {
+      console.error("Failed to add file:", error);
+      // Optionally show error toast to user here
+    } finally {
+      // Close dialog and reset state
       setIsAddDialogOpen(false);
       setNewFileName("");
       setNewFileType("text");
       setUploadedImageData(null);
       setNewFileContent("");
       setIsDropHovering(false);
-      await loadContextFiles();
-    } catch (error) {
-      console.error("Failed to add file:", error);
     }
   };
 

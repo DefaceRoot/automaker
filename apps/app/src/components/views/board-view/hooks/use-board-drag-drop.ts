@@ -4,7 +4,6 @@ import { Feature } from "@/store/app-store";
 import { useAppStore } from "@/store/app-store";
 import { toast } from "sonner";
 import { COLUMNS, ColumnId } from "../constants";
-import { getElectronAPI } from "@/lib/electron";
 
 interface UseBoardDragDropProps {
   features: Feature[];
@@ -15,8 +14,6 @@ interface UseBoardDragDropProps {
     updates: Partial<Feature>
   ) => Promise<void>;
   handleStartImplementation: (feature: Feature) => Promise<boolean>;
-  projectPath: string | null; // Main project path
-  onWorktreeCreated?: () => void; // Callback when a new worktree is created
 }
 
 export function useBoardDragDrop({
@@ -25,66 +22,12 @@ export function useBoardDragDrop({
   runningAutoTasks,
   persistFeatureUpdate,
   handleStartImplementation,
-  projectPath,
-  onWorktreeCreated,
 }: UseBoardDragDropProps) {
   const [activeFeature, setActiveFeature] = useState<Feature | null>(null);
-  const { moveFeature, useWorktrees } = useAppStore();
+  const { moveFeature } = useAppStore();
 
-  /**
-   * Get or create the worktree path for a feature based on its branchName.
-   * - If branchName is "main" or empty, returns the project path
-   * - Otherwise, creates a worktree for that branch if needed
-   */
-  const getOrCreateWorktreeForFeature = useCallback(
-    async (feature: Feature): Promise<string | null> => {
-      if (!projectPath) return null;
-
-      const branchName = feature.branchName || "main";
-
-      // If targeting main branch, use the project path directly
-      if (branchName === "main" || branchName === "master") {
-        return projectPath;
-      }
-
-      // For other branches, create a worktree if it doesn't exist
-      try {
-        const api = getElectronAPI();
-        if (!api?.worktree?.create) {
-          console.error("[DragDrop] Worktree API not available");
-          return projectPath;
-        }
-
-        // Try to create the worktree (will return existing if already exists)
-        const result = await api.worktree.create(projectPath, branchName);
-
-        if (result.success && result.worktree) {
-          console.log(
-            `[DragDrop] Worktree ready for branch "${branchName}": ${result.worktree.path}`
-          );
-          if (result.worktree.isNew) {
-            toast.success(`Worktree created for branch "${branchName}"`, {
-              description: "A new worktree was created for this feature.",
-            });
-          }
-          return result.worktree.path;
-        } else {
-          console.error("[DragDrop] Failed to create worktree:", result.error);
-          toast.error("Failed to create worktree", {
-            description: result.error || "Could not create worktree for this branch.",
-          });
-          return projectPath; // Fall back to project path
-        }
-      } catch (error) {
-        console.error("[DragDrop] Error creating worktree:", error);
-        toast.error("Error creating worktree", {
-          description: error instanceof Error ? error.message : "Unknown error",
-        });
-        return projectPath; // Fall back to project path
-      }
-    },
-    [projectPath]
-  );
+  // Note: getOrCreateWorktreeForFeature removed - worktrees are now created server-side
+  // at execution time based on feature.branchName
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -118,17 +61,13 @@ export function useBoardDragDrop({
       // - Backlog items can always be dragged
       // - waiting_approval items can always be dragged (to allow manual verification via drag)
       // - verified items can always be dragged (to allow moving back to waiting_approval)
-      // - skipTests (non-TDD) items can be dragged between in_progress and verified
-      // - Non-skipTests (TDD) items that are in progress cannot be dragged (they are running)
-      if (
-        draggedFeature.status !== "backlog" &&
-        draggedFeature.status !== "waiting_approval" &&
-        draggedFeature.status !== "verified"
-      ) {
-        // Only allow dragging in_progress if it's a skipTests feature and not currently running
-        if (!draggedFeature.skipTests || isRunningTask) {
+      // - in_progress items can be dragged (but not if they're currently running)
+      // - Non-skipTests (TDD) items that are in progress cannot be dragged if they are running
+      if (draggedFeature.status === "in_progress") {
+        // Only allow dragging in_progress if it's not currently running
+        if (isRunningTask) {
           console.log(
-            "[Board] Cannot drag feature - TDD feature or currently running"
+            "[Board] Cannot drag feature - currently running"
           );
           return;
         }
@@ -154,23 +93,13 @@ export function useBoardDragDrop({
       if (targetStatus === draggedFeature.status) return;
 
       // Handle different drag scenarios
+      // Note: Worktrees are created server-side at execution time based on feature.branchName
       if (draggedFeature.status === "backlog") {
         // From backlog
         if (targetStatus === "in_progress") {
-          // Only create worktrees if the feature is enabled
-          let worktreePath: string | null = null;
-          if (useWorktrees) {
-            // Get or create worktree based on the feature's assigned branch
-            worktreePath = await getOrCreateWorktreeForFeature(draggedFeature);
-            if (worktreePath) {
-              await persistFeatureUpdate(featureId, { worktreePath });
-            }
-            // Refresh worktree selector after moving to in_progress
-            onWorktreeCreated?.();
-          }
           // Use helper function to handle concurrency check and start implementation
-          // Pass feature with worktreePath so handleRunFeature uses the correct path
-          await handleStartImplementation({ ...draggedFeature, worktreePath: worktreePath || undefined });
+          // Server will derive workDir from feature.branchName
+          await handleStartImplementation(draggedFeature);
         } else {
           moveFeature(featureId, targetStatus);
           persistFeatureUpdate(featureId, { status: targetStatus });
@@ -195,11 +124,10 @@ export function useBoardDragDrop({
         } else if (targetStatus === "backlog") {
           // Allow moving waiting_approval cards back to backlog
           moveFeature(featureId, "backlog");
-          // Clear justFinishedAt timestamp and worktreePath when moving back to backlog
+          // Clear justFinishedAt timestamp when moving back to backlog
           persistFeatureUpdate(featureId, {
             status: "backlog",
             justFinishedAt: undefined,
-            worktreePath: undefined,
           });
           toast.info("Feature moved to backlog", {
             description: `Moved to Backlog: ${draggedFeature.description.slice(
@@ -208,13 +136,23 @@ export function useBoardDragDrop({
             )}${draggedFeature.description.length > 50 ? "..." : ""}`,
           });
         }
-      } else if (draggedFeature.skipTests) {
-        // skipTests feature being moved between in_progress and verified
-        if (
+      } else if (draggedFeature.status === "in_progress") {
+        // Handle in_progress features being moved
+        if (targetStatus === "backlog") {
+          // Allow moving in_progress cards back to backlog
+          moveFeature(featureId, "backlog");
+          persistFeatureUpdate(featureId, { status: "backlog" });
+          toast.info("Feature moved to backlog", {
+            description: `Moved to Backlog: ${draggedFeature.description.slice(
+              0,
+              50
+            )}${draggedFeature.description.length > 50 ? "..." : ""}`,
+          });
+        } else if (
           targetStatus === "verified" &&
-          draggedFeature.status === "in_progress"
+          draggedFeature.skipTests
         ) {
-          // Manual verify via drag
+          // Manual verify via drag (only for skipTests features)
           moveFeature(featureId, "verified");
           persistFeatureUpdate(featureId, { status: "verified" });
           toast.success("Feature verified", {
@@ -223,7 +161,10 @@ export function useBoardDragDrop({
               50
             )}${draggedFeature.description.length > 50 ? "..." : ""}`,
           });
-        } else if (
+        }
+      } else if (draggedFeature.skipTests) {
+        // skipTests feature being moved between verified and waiting_approval
+        if (
           targetStatus === "waiting_approval" &&
           draggedFeature.status === "verified"
         ) {
@@ -237,10 +178,9 @@ export function useBoardDragDrop({
             )}${draggedFeature.description.length > 50 ? "..." : ""}`,
           });
         } else if (targetStatus === "backlog") {
-          // Allow moving skipTests cards back to backlog
+          // Allow moving skipTests cards back to backlog (from verified)
           moveFeature(featureId, "backlog");
-          // Clear worktreePath when moving back to backlog
-          persistFeatureUpdate(featureId, { status: "backlog", worktreePath: undefined });
+          persistFeatureUpdate(featureId, { status: "backlog" });
           toast.info("Feature moved to backlog", {
             description: `Moved to Backlog: ${draggedFeature.description.slice(
               0,
@@ -263,8 +203,7 @@ export function useBoardDragDrop({
         } else if (targetStatus === "backlog") {
           // Allow moving verified cards back to backlog
           moveFeature(featureId, "backlog");
-          // Clear worktreePath when moving back to backlog
-          persistFeatureUpdate(featureId, { status: "backlog", worktreePath: undefined });
+          persistFeatureUpdate(featureId, { status: "backlog" });
           toast.info("Feature moved to backlog", {
             description: `Moved to Backlog: ${draggedFeature.description.slice(
               0,
@@ -280,9 +219,6 @@ export function useBoardDragDrop({
       moveFeature,
       persistFeatureUpdate,
       handleStartImplementation,
-      getOrCreateWorktreeForFeature,
-      onWorktreeCreated,
-      useWorktrees,
     ]
   );
 

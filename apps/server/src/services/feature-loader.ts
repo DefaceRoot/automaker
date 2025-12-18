@@ -24,6 +24,8 @@ export interface Feature {
   spec?: string;
   model?: string;
   imagePaths?: Array<string | { path: string; [key: string]: unknown }>;
+  // Branch info - worktree path is derived at runtime from branchName
+  branchName?: string; // Name of the feature branch (undefined = use current worktree)
   skipTests?: boolean;
   thinkingLevel?: string;
   planningMode?: 'skip' | 'lite' | 'spec' | 'full';

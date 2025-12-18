@@ -16,7 +16,6 @@ export function createIndexHandler(autoModeService: AutoModeService) {
         success: true,
         runningAgents,
         totalCount: runningAgents.length,
-        autoLoopRunning: status.autoLoopRunning,
       });
     } catch (error) {
       logError(error, "Get running agents failed");

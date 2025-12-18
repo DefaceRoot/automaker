@@ -8,6 +8,7 @@
 import type { Request, Response } from "express";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { existsSync } from "fs";
 import { isGitRepo, getErrorMessage, logError, normalizePath } from "../common.js";
 
 const execAsync = promisify(exec);
@@ -58,10 +59,12 @@ export function createListHandler() {
       });
 
       const worktrees: WorktreeInfo[] = [];
+      const removedWorktrees: Array<{ path: string; branch: string }> = [];
       const lines = stdout.split("\n");
       let current: { path?: string; branch?: string } = {};
       let isFirst = true;
 
+      // First pass: detect removed worktrees
       for (const line of lines) {
         if (line.startsWith("worktree ")) {
           current.path = normalizePath(line.slice(9));
@@ -69,16 +72,37 @@ export function createListHandler() {
           current.branch = line.slice(7).replace("refs/heads/", "");
         } else if (line === "") {
           if (current.path && current.branch) {
-            worktrees.push({
-              path: current.path,
-              branch: current.branch,
-              isMain: isFirst,
-              isCurrent: current.branch === currentBranch,
-              hasWorktree: true,
-            });
-            isFirst = false;
+            const isMainWorktree = isFirst;
+            // Check if the worktree directory actually exists
+            // Skip checking/pruning the main worktree (projectPath itself)
+            if (!isMainWorktree && !existsSync(current.path)) {
+              // Worktree directory doesn't exist - it was manually deleted
+              removedWorktrees.push({
+                path: current.path,
+                branch: current.branch,
+              });
+            } else {
+              // Worktree exists (or is main worktree), add it to the list
+              worktrees.push({
+                path: current.path,
+                branch: current.branch,
+                isMain: isMainWorktree,
+                isCurrent: current.branch === currentBranch,
+                hasWorktree: true,
+              });
+              isFirst = false;
+            }
           }
           current = {};
+        }
+      }
+
+      // Prune removed worktrees from git (only if any were detected)
+      if (removedWorktrees.length > 0) {
+        try {
+          await execAsync("git worktree prune", { cwd: projectPath });
+        } catch {
+          // Prune failed, but we'll still report the removed worktrees
         }
       }
 
@@ -103,7 +127,11 @@ export function createListHandler() {
         }
       }
 
-      res.json({ success: true, worktrees });
+      res.json({ 
+        success: true, 
+        worktrees,
+        removedWorktrees: removedWorktrees.length > 0 ? removedWorktrees : undefined,
+      });
     } catch (error) {
       logError(error, "List worktrees failed");
       res.status(500).json({ success: false, error: getErrorMessage(error) });

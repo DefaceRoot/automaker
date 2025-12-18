@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -49,18 +49,26 @@ export function CreatePRDialog({
   const [prUrl, setPrUrl] = useState<string | null>(null);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
   const [showBrowserFallback, setShowBrowserFallback] = useState(false);
+  // Track whether an operation completed that warrants a refresh
+  const operationCompletedRef = useRef(false);
 
   // Reset state when dialog opens or worktree changes
   useEffect(() => {
     if (open) {
-      // Only reset form fields, not the result states (prUrl, browserUrl, showBrowserFallback)
-      // These are set by the API response and should persist until dialog closes
+      // Reset form fields
       setTitle("");
       setBody("");
       setCommitMessage("");
       setBaseBranch("main");
       setIsDraft(false);
       setError(null);
+      // Also reset result states when opening for a new worktree
+      // This prevents showing stale PR URLs from previous worktrees
+      setPrUrl(null);
+      setBrowserUrl(null);
+      setShowBrowserFallback(false);
+      // Reset operation tracking
+      operationCompletedRef.current = false;
     } else {
       // Reset everything when dialog closes
       setTitle("");
@@ -72,6 +80,7 @@ export function CreatePRDialog({
       setPrUrl(null);
       setBrowserUrl(null);
       setShowBrowserFallback(false);
+      operationCompletedRef.current = false;
     }
   }, [open, worktree?.path]);
 
@@ -98,6 +107,8 @@ export function CreatePRDialog({
       if (result.success && result.result) {
         if (result.result.prCreated && result.result.prUrl) {
           setPrUrl(result.result.prUrl);
+          // Mark operation as completed for refresh on close
+          operationCompletedRef.current = true;
           toast.success("Pull request created!", {
             description: `PR created from ${result.result.branch}`,
             action: {
@@ -105,7 +116,8 @@ export function CreatePRDialog({
               onClick: () => window.open(result.result!.prUrl!, "_blank"),
             },
           });
-          onCreated();
+          // Don't call onCreated() here - keep dialog open to show success message
+          // onCreated() will be called when user closes the dialog
         } else {
           // Branch was pushed successfully
           const prError = result.result.prError;
@@ -117,6 +129,8 @@ export function CreatePRDialog({
             if (prError === "gh_cli_not_available" || !result.result.ghCliAvailable) {
               setBrowserUrl(result.result.browserUrl ?? null);
               setShowBrowserFallback(true);
+              // Mark operation as completed - branch was pushed successfully
+              operationCompletedRef.current = true;
               toast.success("Branch pushed", {
                 description: result.result.committed
                   ? `Commit ${result.result.commitHash} pushed to ${result.result.branch}`
@@ -142,6 +156,8 @@ export function CreatePRDialog({
               // Show error but also provide browser option
               setBrowserUrl(result.result.browserUrl ?? null);
               setShowBrowserFallback(true);
+              // Mark operation as completed - branch was pushed even though PR creation failed
+              operationCompletedRef.current = true;
               toast.error("PR creation failed", {
                 description: errorMessage,
                 duration: 8000,
@@ -182,19 +198,13 @@ export function CreatePRDialog({
   };
 
   const handleClose = () => {
+    // Only call onCreated() if an actual operation completed
+    // This prevents unnecessary refreshes when user cancels
+    if (operationCompletedRef.current) {
+      onCreated();
+    }
     onOpenChange(false);
-    // Reset state after dialog closes
-    setTimeout(() => {
-      setTitle("");
-      setBody("");
-      setCommitMessage("");
-      setBaseBranch("main");
-      setIsDraft(false);
-      setError(null);
-      setPrUrl(null);
-      setBrowserUrl(null);
-      setShowBrowserFallback(false);
-    }, 200);
+    // State reset is handled by useEffect when open becomes false
   };
 
   if (!worktree) return null;
@@ -228,13 +238,18 @@ export function CreatePRDialog({
                 Your PR is ready for review
               </p>
             </div>
-            <Button
-              onClick={() => window.open(prUrl, "_blank")}
-              className="gap-2"
-            >
-              <ExternalLink className="w-4 h-4" />
-              View Pull Request
-            </Button>
+            <div className="flex gap-2 justify-center">
+              <Button
+                onClick={() => window.open(prUrl, "_blank")}
+                className="gap-2"
+              >
+                <ExternalLink className="w-4 h-4" />
+                View Pull Request
+              </Button>
+              <Button variant="outline" onClick={handleClose}>
+                Close
+              </Button>
+            </div>
           </div>
         ) : shouldShowBrowserFallback ? (
           <div className="py-6 text-center space-y-4">

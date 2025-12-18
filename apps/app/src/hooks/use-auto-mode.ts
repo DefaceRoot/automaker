@@ -18,7 +18,6 @@ export function useAutoMode() {
     setAutoModeRunning,
     addRunningTask,
     removeRunningTask,
-    clearRunningTasks,
     currentProject,
     addAutoModeActivity,
     maxConcurrency,
@@ -30,7 +29,6 @@ export function useAutoMode() {
       setAutoModeRunning: state.setAutoModeRunning,
       addRunningTask: state.addRunningTask,
       removeRunningTask: state.removeRunningTask,
-      clearRunningTasks: state.clearRunningTasks,
       currentProject: state.currentProject,
       addAutoModeActivity: state.addAutoModeActivity,
       maxConcurrency: state.maxConcurrency,
@@ -123,33 +121,6 @@ export function useAutoMode() {
                 : "Feature completed with failures",
               passes: event.passes,
             });
-          }
-          break;
-
-        case "auto_mode_stopped":
-          // Auto mode was explicitly stopped (by user or error)
-          setAutoModeRunning(eventProjectId, false);
-          clearRunningTasks(eventProjectId);
-          console.log("[AutoMode] Auto mode stopped");
-          break;
-
-        case "auto_mode_started":
-          // Auto mode started - ensure UI reflects running state
-          console.log("[AutoMode] Auto mode started:", event.message);
-          break;
-
-        case "auto_mode_idle":
-          // Auto mode is running but has no pending features to pick up
-          // This is NOT a stop - auto mode keeps running and will pick up new features
-          console.log("[AutoMode] Auto mode idle - waiting for new features");
-          break;
-
-        case "auto_mode_complete":
-          // Legacy event - only handle if it looks like a stop (for backwards compatibility)
-          if (event.message === "Auto mode stopped") {
-            setAutoModeRunning(eventProjectId, false);
-            clearRunningTasks(eventProjectId);
-            console.log("[AutoMode] Auto mode stopped (legacy event)");
           }
           break;
 
@@ -356,130 +327,36 @@ export function useAutoMode() {
     projectId,
     addRunningTask,
     removeRunningTask,
-    clearRunningTasks,
-    setAutoModeRunning,
     addAutoModeActivity,
     getProjectIdFromPath,
     setPendingPlanApproval,
     currentProject?.path,
   ]);
 
-  // Restore auto mode for all projects that were running when app was closed
-  // This runs once on mount to restart auto loops for persisted running states
-  useEffect(() => {
-    const api = getElectronAPI();
-    if (!api?.autoMode) return;
-
-    // Find all projects that have auto mode marked as running
-    const projectsToRestart: Array<{ projectId: string; projectPath: string }> =
-      [];
-    for (const [projectId, state] of Object.entries(autoModeByProject)) {
-      if (state.isRunning) {
-        // Find the project path for this project ID
-        const project = projects.find((p) => p.id === projectId);
-        if (project) {
-          projectsToRestart.push({ projectId, projectPath: project.path });
-        }
-      }
-    }
-
-    // Restart auto mode for each project
-    for (const { projectId, projectPath } of projectsToRestart) {
-      console.log(`[AutoMode] Restoring auto mode for project: ${projectPath}`);
-      api.autoMode
-        .start(projectPath, maxConcurrency)
-        .then((result) => {
-          if (!result.success) {
-            console.error(
-              `[AutoMode] Failed to restore auto mode for ${projectPath}:`,
-              result.error
-            );
-            // Mark as not running if we couldn't restart
-            setAutoModeRunning(projectId, false);
-          } else {
-            console.log(`[AutoMode] Restored auto mode for ${projectPath}`);
-          }
-        })
-        .catch((error) => {
-          console.error(
-            `[AutoMode] Error restoring auto mode for ${projectPath}:`,
-            error
-          );
-          setAutoModeRunning(projectId, false);
-        });
-    }
-    // Only run once on mount - intentionally empty dependency array
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Start auto mode
-  const start = useCallback(async () => {
+  // Start auto mode - UI only, feature pickup is handled in board-view.tsx
+  const start = useCallback(() => {
     if (!currentProject) {
       console.error("No project selected");
       return;
     }
 
-    try {
-      const api = getElectronAPI();
-      if (!api?.autoMode) {
-        throw new Error("Auto mode API not available");
-      }
-
-      const result = await api.autoMode.start(
-        currentProject.path,
-        maxConcurrency
-      );
-
-      if (result.success) {
-        setAutoModeRunning(currentProject.id, true);
-        console.log(
-          `[AutoMode] Started successfully with maxConcurrency: ${maxConcurrency}`
-        );
-      } else {
-        console.error("[AutoMode] Failed to start:", result.error);
-        throw new Error(result.error || "Failed to start auto mode");
-      }
-    } catch (error) {
-      console.error("[AutoMode] Error starting:", error);
-      if (currentProject) {
-        setAutoModeRunning(currentProject.id, false);
-      }
-      throw error;
-    }
+    setAutoModeRunning(currentProject.id, true);
+    console.log(`[AutoMode] Started with maxConcurrency: ${maxConcurrency}`);
   }, [currentProject, setAutoModeRunning, maxConcurrency]);
 
-  // Stop auto mode - only turns off the toggle, running tasks continue
-  const stop = useCallback(async () => {
+  // Stop auto mode - UI only, running tasks continue until natural completion
+  const stop = useCallback(() => {
     if (!currentProject) {
       console.error("No project selected");
       return;
     }
 
-    try {
-      const api = getElectronAPI();
-      if (!api?.autoMode) {
-        throw new Error("Auto mode API not available");
-      }
-
-      const result = await api.autoMode.stop(currentProject.path);
-
-      if (result.success) {
-        setAutoModeRunning(currentProject.id, false);
-        // NOTE: We intentionally do NOT clear running tasks here.
-        // Stopping auto mode only turns off the toggle to prevent new features
-        // from being picked up. Running tasks will complete naturally and be
-        // removed via the auto_mode_feature_complete event.
-        console.log(
-          "[AutoMode] Stopped successfully - running tasks will continue"
-        );
-      } else {
-        console.error("[AutoMode] Failed to stop:", result.error);
-        throw new Error(result.error || "Failed to stop auto mode");
-      }
-    } catch (error) {
-      console.error("[AutoMode] Error stopping:", error);
-      throw error;
-    }
+    setAutoModeRunning(currentProject.id, false);
+    // NOTE: We intentionally do NOT clear running tasks here.
+    // Stopping auto mode only turns off the toggle to prevent new features
+    // from being picked up. Running tasks will complete naturally and be
+    // removed via the auto_mode_feature_complete event.
+    console.log("[AutoMode] Stopped - running tasks will continue");
   }, [currentProject, setAutoModeRunning]);
 
   // Stop a specific feature

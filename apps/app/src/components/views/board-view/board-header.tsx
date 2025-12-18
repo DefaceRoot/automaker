@@ -3,7 +3,9 @@
 import { Button } from "@/components/ui/button";
 import { HotkeyButton } from "@/components/ui/hotkey-button";
 import { Slider } from "@/components/ui/slider";
-import { Play, StopCircle, Plus, Users } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Plus, Users } from "lucide-react";
 import { KeyboardShortcut } from "@/hooks/use-keyboard-shortcuts";
 
 interface BoardHeaderProps {
@@ -11,8 +13,7 @@ interface BoardHeaderProps {
   maxConcurrency: number;
   onConcurrencyChange: (value: number) => void;
   isAutoModeRunning: boolean;
-  onStartAutoMode: () => void;
-  onStopAutoMode: () => void;
+  onAutoModeToggle: (enabled: boolean) => void;
   onAddFeature: () => void;
   addFeatureShortcut: KeyboardShortcut;
   isMounted: boolean;
@@ -23,8 +24,7 @@ export function BoardHeader({
   maxConcurrency,
   onConcurrencyChange,
   isAutoModeRunning,
-  onStartAutoMode,
-  onStopAutoMode,
+  onAutoModeToggle,
   onAddFeature,
   addFeatureShortcut,
   isMounted,
@@ -63,29 +63,20 @@ export function BoardHeader({
 
         {/* Auto Mode Toggle - only show after mount to prevent hydration issues */}
         {isMounted && (
-          <>
-            {isAutoModeRunning ? (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={onStopAutoMode}
-                data-testid="stop-auto-mode"
-              >
-                <StopCircle className="w-4 h-4 mr-2" />
-                Stop Auto Mode
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onStartAutoMode}
-                data-testid="start-auto-mode"
-              >
-                <Play className="w-4 h-4 mr-2" />
-                Auto Mode
-              </Button>
-            )}
-          </>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border">
+            <Label
+              htmlFor="auto-mode-toggle"
+              className="text-sm font-medium cursor-pointer"
+            >
+              Auto Mode
+            </Label>
+            <Switch
+              id="auto-mode-toggle"
+              checked={isAutoModeRunning}
+              onCheckedChange={onAutoModeToggle}
+              data-testid="auto-mode-toggle"
+            />
+          </div>
         )}
 
         <HotkeyButton

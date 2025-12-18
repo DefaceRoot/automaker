@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import type { WorktreeInfo } from "../types";
 
 interface UseWorktreeActionsOptions {
-  fetchWorktrees: () => Promise<void>;
+  fetchWorktrees: () => Promise<Array<{ path: string; branch: string }> | undefined>;
   fetchBranches: (worktreePath: string) => Promise<void>;
 }
 

@@ -19,15 +19,11 @@ import type { EventEmitter } from "../lib/events.js";
 import { buildPromptWithImages } from "../lib/prompt-builder.js";
 import { resolveModelString, DEFAULT_MODELS } from "../lib/model-resolver.js";
 import { createAutoModeOptions } from "../lib/sdk-options.js";
-import { classifyError } from "../lib/error-handler.js";
+import { isAbortError, classifyError } from "../lib/error-handler.js";
 import { resolveDependencies, areDependenciesSatisfied } from "../lib/dependency-resolver.js";
 import type { Feature } from "./feature-loader.js";
-import {
-  getFeatureDir,
-  getFeaturesDir,
-  getAutomakerDir,
-  getWorktreesDir,
-} from "../lib/automaker-paths.js";
+import { FeatureLoader } from "./feature-loader.js";
+import { getFeatureDir, getAutomakerDir, getFeaturesDir } from "../lib/automaker-paths.js";
 
 const execAsync = promisify(exec);
 
@@ -313,10 +309,11 @@ interface RunningFeature {
   startTime: number;
 }
 
-interface AutoModeConfig {
-  maxConcurrency: number;
-  useWorktrees: boolean;
+interface AutoLoopState {
   projectPath: string;
+  maxConcurrency: number;
+  abortController: AbortController;
+  isRunning: boolean;
 }
 
 interface PendingApproval {
@@ -326,9 +323,17 @@ interface PendingApproval {
   projectPath: string;
 }
 
+interface AutoModeConfig {
+  maxConcurrency: number;
+  useWorktrees: boolean;
+  projectPath: string;
+}
+
 export class AutoModeService {
   private events: EventEmitter;
   private runningFeatures = new Map<string, RunningFeature>();
+  private autoLoop: AutoLoopState | null = null;
+  private featureLoader = new FeatureLoader();
   private autoLoopRunning = false;
   private autoLoopAbortController: AbortController | null = null;
   private config: AutoModeConfig | null = null;
@@ -452,7 +457,6 @@ export class AutoModeService {
    * @param featureId - The feature ID to execute
    * @param useWorktrees - Whether to use worktrees for isolation
    * @param isAutoMode - Whether this is running in auto mode
-   * @param providedWorktreePath - Optional: use this worktree path instead of creating a new one
    */
   async executeFeature(
     projectPath: string,
@@ -465,73 +469,87 @@ export class AutoModeService {
     }
   ): Promise<void> {
     if (this.runningFeatures.has(featureId)) {
-      throw new Error(`Feature ${featureId} is already running`);
+      throw new Error("already running");
     }
 
+    // Add to running features immediately to prevent race conditions
     const abortController = new AbortController();
-    const branchName = `feature/${featureId}`;
-    let worktreePath: string | null = null;
-
-    // Use provided worktree path if given, otherwise setup new worktree if enabled
-    if (providedWorktreePath) {
-      // Resolve to absolute path - critical for cross-platform compatibility
-      // On Windows, relative paths or paths with forward slashes may not work correctly with cwd
-      // On all platforms, absolute paths ensure commands execute in the correct directory
-      try {
-        // Resolve relative paths relative to projectPath, absolute paths as-is
-        const resolvedPath = path.isAbsolute(providedWorktreePath)
-          ? path.resolve(providedWorktreePath)
-          : path.resolve(projectPath, providedWorktreePath);
-        
-        // Verify the path exists before using it
-        await fs.access(resolvedPath);
-        worktreePath = resolvedPath;
-        console.log(`[AutoMode] Using provided worktree path (resolved): ${worktreePath}`);
-      } catch (error) {
-        console.error(`[AutoMode] Provided worktree path invalid or doesn't exist: ${providedWorktreePath}`, error);
-        // Fall through to create new worktree or use project path
-      }
-    }
-    
-    if (!worktreePath && useWorktrees) {
-      // No specific worktree provided, create a new one for this feature
-      worktreePath = await this.setupWorktree(
-        projectPath,
-        featureId,
-        branchName
-      );
-    }
-
-    // Ensure workDir is always an absolute path for cross-platform compatibility
-    const workDir = worktreePath ? path.resolve(worktreePath) : path.resolve(projectPath);
-
-    this.runningFeatures.set(featureId, {
+    const tempRunningFeature: RunningFeature = {
       featureId,
       projectPath,
-      worktreePath,
-      branchName,
+      worktreePath: null,
+      branchName: null,
       abortController,
       isAutoMode,
       startTime: Date.now(),
-    });
-
-    // Emit feature start event
-    this.emitAutoModeEvent("auto_mode_feature_start", {
-      featureId,
-      projectPath,
-      feature: {
-        id: featureId,
-        title: "Loading...",
-        description: "Feature is starting",
-      },
-    });
+    };
+    this.runningFeatures.set(featureId, tempRunningFeature);
 
     try {
-      // Load feature details
+      // Check if feature has existing context - if so, resume instead of starting fresh
+      const hasExistingContext = await this.contextExists(
+        projectPath,
+        featureId
+      );
+      if (hasExistingContext) {
+        console.log(
+          `[AutoMode] Feature ${featureId} has existing context, resuming instead of starting fresh`
+        );
+        // Remove from running features temporarily, resumeFeature will add it back
+        this.runningFeatures.delete(featureId);
+        return this.resumeFeature(projectPath, featureId, useWorktrees);
+      }
+
+      // Emit feature start event early
+      this.emitAutoModeEvent("auto_mode_feature_start", {
+        featureId,
+        projectPath,
+        feature: {
+          id: featureId,
+          title: "Loading...",
+          description: "Feature is starting",
+        },
+      });
+      // Load feature details FIRST to get branchName
       const feature = await this.loadFeature(projectPath, featureId);
       if (!feature) {
         throw new Error(`Feature ${featureId} not found`);
       }
+
+      // Derive workDir from feature.branchName
+      // If no branchName, derive from feature ID: feature/{featureId}
+      let worktreePath: string | null = null;
+      const branchName = feature.branchName || `feature/${featureId}`;
+
+      if (useWorktrees && branchName) {
+        // Try to find existing worktree for this branch
+        worktreePath = await this.findExistingWorktreeForBranch(
+          projectPath,
+          branchName
+        );
+
+        if (!worktreePath) {
+          // Create worktree for this branch
+          worktreePath = await this.setupWorktree(
+            projectPath,
+            featureId,
+            branchName
+          );
+        }
+
+        console.log(
+          `[AutoMode] Using worktree for branch "${branchName}": ${worktreePath}`
+        );
+      }
+
+      // Ensure workDir is always an absolute path for cross-platform compatibility
+      const workDir = worktreePath
+        ? path.resolve(worktreePath)
+        : path.resolve(projectPath);
+
+      // Update running feature with actual worktree info
+      tempRunningFeature.worktreePath = worktreePath;
+      tempRunningFeature.branchName = branchName;
 
       // Update feature status to in_progress
       await this.updateFeatureStatus(projectPath, featureId, "in_progress");
@@ -567,7 +585,7 @@ export class AutoModeService {
       // Get model from feature
       const model = resolveModelString(feature.model, DEFAULT_MODELS.claude);
       console.log(
-        `[AutoMode] Executing feature ${featureId} with model: ${model}`
+        `[AutoMode] Executing feature ${featureId} with model: ${model} in ${workDir}`
       );
 
       // Run the agent with the feature's model and images
@@ -576,6 +594,7 @@ export class AutoModeService {
         featureId,
         prompt,
         abortController,
+        projectPath,
         imagePaths,
         model,
         {
@@ -596,7 +615,7 @@ export class AutoModeService {
         featureId,
         passes: true,
         message: `Feature completed in ${Math.round(
-          (Date.now() - this.runningFeatures.get(featureId)!.startTime) / 1000
+          (Date.now() - tempRunningFeature.startTime) / 1000
         )}s`,
         projectPath,
       });
@@ -651,6 +670,10 @@ export class AutoModeService {
     featureId: string,
     useWorktrees = false
   ): Promise<void> {
+    if (this.runningFeatures.has(featureId)) {
+      throw new Error("already running");
+    }
+
     // Check if context exists in .automaker directory
     const featureDir = getFeatureDir(projectPath, featureId);
     const contextPath = path.join(featureDir, "agent-output.md");
@@ -674,7 +697,9 @@ export class AutoModeService {
       );
     }
 
-    // No context, start fresh
+    // No context, start fresh - executeFeature will handle adding to runningFeatures
+    // Remove the temporary entry we added
+    this.runningFeatures.delete(featureId);
     return this.executeFeature(projectPath, featureId, useWorktrees, false);
   }
 
@@ -686,7 +711,7 @@ export class AutoModeService {
     featureId: string,
     prompt: string,
     imagePaths?: string[],
-    providedWorktreePath?: string
+    useWorktrees = true
   ): Promise<void> {
     if (this.runningFeatures.has(featureId)) {
       throw new Error(`Feature ${featureId} is already running`);
@@ -694,31 +719,29 @@ export class AutoModeService {
 
     const abortController = new AbortController();
 
-    // Use the provided worktreePath (from the feature's assigned branch)
-    // Fall back to project path if not provided
+    // Load feature info for context FIRST to get branchName
+    const feature = await this.loadFeature(projectPath, featureId);
+
+    // Derive workDir from feature.branchName
+    // If no branchName, derive from feature ID: feature/{featureId}
     let workDir = path.resolve(projectPath);
     let worktreePath: string | null = null;
+    const branchName = feature?.branchName || `feature/${featureId}`;
 
-    if (providedWorktreePath) {
-      try {
-        // Resolve to absolute path - critical for cross-platform compatibility
-        // On Windows, relative paths or paths with forward slashes may not work correctly with cwd
-        // On all platforms, absolute paths ensure commands execute in the correct directory
-        const resolvedPath = path.isAbsolute(providedWorktreePath)
-          ? path.resolve(providedWorktreePath)
-          : path.resolve(projectPath, providedWorktreePath);
-        
-        await fs.access(resolvedPath);
-        workDir = resolvedPath;
-        worktreePath = resolvedPath;
-      } catch {
-        // Worktree path provided but doesn't exist, use project path
-        console.log(`[AutoMode] Provided worktreePath doesn't exist: ${providedWorktreePath}, using project path`);
+    if (useWorktrees && branchName) {
+      // Try to find existing worktree for this branch
+      worktreePath = await this.findExistingWorktreeForBranch(
+        projectPath,
+        branchName
+      );
+
+      if (worktreePath) {
+        workDir = worktreePath;
+        console.log(
+          `[AutoMode] Follow-up using worktree for branch "${branchName}": ${workDir}`
+        );
       }
     }
-
-    // Load feature info for context
-    const feature = await this.loadFeature(projectPath, featureId);
 
     // Load previous agent output if it exists
     const featureDir = getFeatureDir(projectPath, featureId);
@@ -756,7 +779,7 @@ Address the follow-up instructions above. Review the previous work and make the 
       featureId,
       projectPath,
       worktreePath,
-      branchName: worktreePath ? path.basename(worktreePath) : null,
+      branchName,
       abortController,
       isAutoMode: false,
       startTime: Date.now(),
@@ -853,6 +876,7 @@ Address the follow-up instructions above. Review the previous work and make the 
         featureId,
         fullPrompt,
         abortController,
+        projectPath,
         allImagePaths.length > 0 ? allImagePaths : imagePaths,
         model,
         {
@@ -975,17 +999,25 @@ Address the follow-up instructions above. Review the previous work and make the 
         workDir = providedWorktreePath;
         console.log(`[AutoMode] Committing in provided worktree: ${workDir}`);
       } catch {
-        console.log(`[AutoMode] Provided worktree path doesn't exist: ${providedWorktreePath}, using project path`);
+        console.log(
+          `[AutoMode] Provided worktree path doesn't exist: ${providedWorktreePath}, using project path`
+        );
       }
     } else {
       // Fallback: try to find worktree at legacy location
-      const legacyWorktreePath = path.join(projectPath, ".worktrees", featureId);
+      const legacyWorktreePath = path.join(
+        projectPath,
+        ".worktrees",
+        featureId
+      );
       try {
         await fs.access(legacyWorktreePath);
         workDir = legacyWorktreePath;
         console.log(`[AutoMode] Committing in legacy worktree: ${workDir}`);
       } catch {
-        console.log(`[AutoMode] No worktree found, committing in project path: ${workDir}`);
+        console.log(
+          `[AutoMode] No worktree found, committing in project path: ${workDir}`
+        );
       }
     }
 
@@ -1135,18 +1167,17 @@ Format your response as a structured markdown document.`;
     }
   }
 
+
   /**
    * Get current status
    */
   getStatus(): {
     isRunning: boolean;
-    autoLoopRunning: boolean;
     runningFeatures: string[];
     runningCount: number;
   } {
     return {
-      isRunning: this.autoLoopRunning || this.runningFeatures.size > 0,
-      autoLoopRunning: this.autoLoopRunning,
+      isRunning: this.runningFeatures.size > 0,
       runningFeatures: Array.from(this.runningFeatures.keys()),
       runningCount: this.runningFeatures.size,
     };
@@ -1323,6 +1354,7 @@ Format your response as a structured markdown document.`;
 
   // Private helpers
 
+
   /**
    * Find an existing worktree for a given branch by checking git worktree list
    */
@@ -1381,10 +1413,15 @@ Format your response as a structured markdown document.`;
     branchName: string
   ): Promise<string> {
     // First, check if git already has a worktree for this branch (anywhere)
-    const existingWorktree = await this.findExistingWorktreeForBranch(projectPath, branchName);
+    const existingWorktree = await this.findExistingWorktreeForBranch(
+      projectPath,
+      branchName
+    );
     if (existingWorktree) {
       // Path is already resolved to absolute in findExistingWorktreeForBranch
-      console.log(`[AutoMode] Found existing worktree for branch "${branchName}" at: ${existingWorktree}`);
+      console.log(
+        `[AutoMode] Found existing worktree for branch "${branchName}" at: ${existingWorktree}`
+      );
       return existingWorktree;
     }
 
@@ -1683,6 +1720,7 @@ This helps parse your summary correctly in the output logs.`;
     featureId: string,
     prompt: string,
     abortController: AbortController,
+    projectPath: string,
     imagePaths?: string[],
     model?: string,
     options?: {
@@ -1692,7 +1730,7 @@ This helps parse your summary correctly in the output logs.`;
       previousContent?: string;
     }
   ): Promise<void> {
-    const projectPath = options?.projectPath || workDir;
+    const finalProjectPath = options?.projectPath || projectPath;
     const planningMode = options?.planningMode || 'skip';
     const previousContent = options?.previousContent;
 
@@ -1708,7 +1746,9 @@ This helps parse your summary correctly in the output logs.`;
     // CI/CD Mock Mode: Return early with mock response when AUTOMAKER_MOCK_AGENT is set
     // This prevents actual API calls during automated testing
     if (process.env.AUTOMAKER_MOCK_AGENT === "true") {
-      console.log(`[AutoMode] MOCK MODE: Skipping real agent execution for feature ${featureId}`);
+      console.log(
+        `[AutoMode] MOCK MODE: Skipping real agent execution for feature ${featureId}`
+      );
 
       // Simulate some work being done
       await this.sleep(500);
@@ -1740,8 +1780,7 @@ This helps parse your summary correctly in the output logs.`;
       await this.sleep(200);
 
       // Save mock agent output
-      const configProjectPath = this.config?.projectPath || workDir;
-      const featureDirForOutput = getFeatureDir(configProjectPath, featureId);
+      const featureDirForOutput = getFeatureDir(projectPath, featureId);
       const outputPath = path.join(featureDirForOutput, "agent-output.md");
 
       const mockOutput = `# Mock Agent Output
@@ -1759,7 +1798,9 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await fs.writeFile(outputPath, mockOutput);
 
-      console.log(`[AutoMode] MOCK MODE: Completed mock execution for feature ${featureId}`);
+      console.log(
+        `[AutoMode] MOCK MODE: Completed mock execution for feature ${featureId}`
+      );
       return;
     }
 
@@ -1812,10 +1853,8 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
     let specDetected = false;
 
     // Agent output goes to .automaker directory
-    // Note: We use the original projectPath here (from config), not workDir
-    // because workDir might be a worktree path
-    const configProjectPath = this.config?.projectPath || workDir;
-    const featureDirForOutput = getFeatureDir(configProjectPath, featureId);
+    // Note: We use projectPath here, not workDir, because workDir might be a worktree path
+    const featureDirForOutput = getFeatureDir(projectPath, featureId);
     const outputPath = path.join(featureDirForOutput, "agent-output.md");
 
     // Incremental file writing state
@@ -1829,7 +1868,10 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
         await fs.writeFile(outputPath, responseText);
       } catch (error) {
         // Log but don't crash - file write errors shouldn't stop execution
-        console.error(`[AutoMode] Failed to write agent output for ${featureId}:`, error);
+        console.error(
+          `[AutoMode] Failed to write agent output for ${featureId}:`,
+          error
+        );
       }
     };
 
@@ -1848,11 +1890,11 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
         for (const block of msg.message.content) {
           if (block.type === "text") {
             // Add separator before new text if we already have content and it doesn't end with newlines
-            if (responseText.length > 0 && !responseText.endsWith('\n\n')) {
-              if (responseText.endsWith('\n')) {
-                responseText += '\n';
+            if (responseText.length > 0 && !responseText.endsWith("\n\n")) {
+              if (responseText.endsWith("\n")) {
+                responseText += "\n";
               } else {
-                responseText += '\n\n';
+                responseText += "\n\n";
               }
             }
             responseText += block.text || "";
@@ -2275,12 +2317,16 @@ Implement all the changes described in the plan above.`;
             });
 
             // Also add to file output for persistence
-            if (responseText.length > 0 && !responseText.endsWith('\n')) {
-              responseText += '\n';
+            if (responseText.length > 0 && !responseText.endsWith("\n")) {
+              responseText += "\n";
             }
             responseText += `\n🔧 Tool: ${block.name}\n`;
             if (block.input) {
-              responseText += `Input: ${JSON.stringify(block.input, null, 2)}\n`;
+              responseText += `Input: ${JSON.stringify(
+                block.input,
+                null,
+                2
+              )}\n`;
             }
             scheduleWrite();
           }
@@ -2420,7 +2466,28 @@ Begin implementing task ${task.id} now.`;
     });
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(resolve, ms);
+
+      // If signal is provided and already aborted, reject immediately
+      if (signal?.aborted) {
+        clearTimeout(timeout);
+        reject(new Error("Aborted"));
+        return;
+      }
+
+      // Listen for abort signal
+      if (signal) {
+        signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timeout);
+            reject(new Error("Aborted"));
+          },
+          { once: true }
+        );
+      }
+    });
   }
 }

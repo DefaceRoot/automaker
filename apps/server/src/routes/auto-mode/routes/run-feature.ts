@@ -12,30 +12,30 @@ const logger = createLogger("AutoMode");
 export function createRunFeatureHandler(autoModeService: AutoModeService) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { projectPath, featureId, useWorktrees, worktreePath } = req.body as {
+      const { projectPath, featureId, useWorktrees } = req.body as {
         projectPath: string;
         featureId: string;
         useWorktrees?: boolean;
-        worktreePath?: string;
       };
 
       if (!projectPath || !featureId) {
-        res
-          .status(400)
-          .json({
-            success: false,
-            error: "projectPath and featureId are required",
-          });
+        res.status(400).json({
+          success: false,
+          error: "projectPath and featureId are required",
+        });
         return;
       }
 
       // Start execution in background
-      // If worktreePath is provided, use it directly; otherwise let the service decide
-      // Default to false - worktrees should only be used when explicitly enabled
+      // executeFeature derives workDir from feature.branchName
       autoModeService
-        .executeFeature(projectPath, featureId, useWorktrees ?? false, false, worktreePath)
+        .executeFeature(projectPath, featureId, useWorktrees ?? false, false)
         .catch((error) => {
           logger.error(`[AutoMode] Feature ${featureId} error:`, error);
+        })
+        .finally(() => {
+          // Release the starting slot when execution completes (success or error)
+          // Note: The feature should be in runningFeatures by this point
         });
 
       res.json({ success: true });

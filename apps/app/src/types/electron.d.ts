@@ -199,30 +199,6 @@ export type AutoModeEvent =
       projectPath?: string;
     }
   | {
-      type: "auto_mode_complete";
-      message: string;
-      projectId?: string;
-      projectPath?: string;
-    }
-  | {
-      type: "auto_mode_stopped";
-      message: string;
-      projectId?: string;
-      projectPath?: string;
-    }
-  | {
-      type: "auto_mode_started";
-      message: string;
-      projectId?: string;
-      projectPath?: string;
-    }
-  | {
-      type: "auto_mode_idle";
-      message: string;
-      projectId?: string;
-      projectPath?: string;
-    }
-  | {
       type: "auto_mode_phase";
       featureId: string;
       projectId?: string;
@@ -375,20 +351,6 @@ export interface SpecRegenerationAPI {
 }
 
 export interface AutoModeAPI {
-  start: (
-    projectPath: string,
-    maxConcurrency?: number
-  ) => Promise<{
-    success: boolean;
-    error?: string;
-  }>;
-
-  stop: (projectPath: string) => Promise<{
-    success: boolean;
-    error?: string;
-    runningFeatures?: number;
-  }>;
-
   stopFeature: (featureId: string) => Promise<{
     success: boolean;
     error?: string;
@@ -396,7 +358,6 @@ export interface AutoModeAPI {
 
   status: (projectPath?: string) => Promise<{
     success: boolean;
-    autoLoopRunning?: boolean;
     isRunning?: boolean;
     currentFeatureId?: string | null;
     runningFeatures?: string[];
@@ -408,8 +369,7 @@ export interface AutoModeAPI {
   runFeature: (
     projectPath: string,
     featureId: string,
-    useWorktrees?: boolean,
-    worktreePath?: string
+    useWorktrees?: boolean
   ) => Promise<{
     success: boolean;
     passes?: boolean;
@@ -455,7 +415,7 @@ export interface AutoModeAPI {
     featureId: string,
     prompt: string,
     imagePaths?: string[],
-    worktreePath?: string
+    useWorktrees?: boolean
   ) => Promise<{
     success: boolean;
     passes?: boolean;
@@ -707,6 +667,10 @@ export interface WorktreeAPI {
       hasWorktree: boolean; // Does this branch have an active worktree?
       hasChanges?: boolean;
       changedFilesCount?: number;
+    }>;
+    removedWorktrees?: Array<{
+      path: string;
+      branch: string;
     }>;
     error?: string;
   }>;

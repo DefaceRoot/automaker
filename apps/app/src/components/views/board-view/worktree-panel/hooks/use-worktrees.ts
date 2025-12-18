@@ -9,9 +9,10 @@ import type { WorktreeInfo } from "../types";
 interface UseWorktreesOptions {
   projectPath: string;
   refreshTrigger?: number;
+  onRemovedWorktrees?: (removedWorktrees: Array<{ path: string; branch: string }>) => void;
 }
 
-export function useWorktrees({ projectPath, refreshTrigger = 0 }: UseWorktreesOptions) {
+export function useWorktrees({ projectPath, refreshTrigger = 0, onRemovedWorktrees }: UseWorktreesOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
 
@@ -34,8 +35,11 @@ export function useWorktrees({ projectPath, refreshTrigger = 0 }: UseWorktreesOp
         setWorktrees(result.worktrees);
         setWorktreesInStore(projectPath, result.worktrees);
       }
+      // Return removed worktrees so they can be handled by the caller
+      return result.removedWorktrees;
     } catch (error) {
       console.error("Failed to fetch worktrees:", error);
+      return undefined;
     } finally {
       setIsLoading(false);
     }
@@ -47,9 +51,13 @@ export function useWorktrees({ projectPath, refreshTrigger = 0 }: UseWorktreesOp
 
   useEffect(() => {
     if (refreshTrigger > 0) {
-      fetchWorktrees();
+      fetchWorktrees().then((removedWorktrees) => {
+        if (removedWorktrees && removedWorktrees.length > 0 && onRemovedWorktrees) {
+          onRemovedWorktrees(removedWorktrees);
+        }
+      });
     }
-  }, [refreshTrigger, fetchWorktrees]);
+  }, [refreshTrigger, fetchWorktrees, onRemovedWorktrees]);
 
   useEffect(() => {
     if (worktrees.length > 0) {
@@ -59,6 +67,8 @@ export function useWorktrees({ projectPath, refreshTrigger = 0 }: UseWorktreesOp
         : worktrees.some((w) => !w.isMain && pathsEqual(w.path, currentPath));
 
       if (currentWorktree == null || (currentPath !== null && !currentWorktreeExists)) {
+        // Find the primary worktree and get its branch name
+        // Fallback to "main" only if worktrees haven't loaded yet
         const mainWorktree = worktrees.find((w) => w.isMain);
         const mainBranch = mainWorktree?.branch || "main";
         setCurrentWorktree(projectPath, null, mainBranch);

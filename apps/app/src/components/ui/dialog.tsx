@@ -87,16 +87,18 @@ function DialogOverlay({
   );
 }
 
-function DialogContent({
-  className,
-  children,
-  showCloseButton = true,
-  compact = false,
-  ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+export type DialogContentProps = Omit<
+  React.ComponentProps<typeof DialogPrimitive.Content>,
+  "ref"
+> & {
   showCloseButton?: boolean;
   compact?: boolean;
-}) {
+};
+
+const DialogContent = React.forwardRef<
+  HTMLDivElement,
+  DialogContentProps
+>(({ className, children, showCloseButton = true, compact = false, ...props }, ref) => {
   // Check if className contains a custom max-width
   const hasCustomMaxWidth =
     typeof className === "string" && className.includes("max-w-");
@@ -105,6 +107,7 @@ function DialogContent({
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogContentPrimitive
+        ref={ref}
         data-slot="dialog-content"
         className={cn(
           "fixed top-[50%] left-[50%] z-50 translate-x-[-50%] translate-y-[-50%]",
@@ -148,7 +151,9 @@ function DialogContent({
       </DialogContentPrimitive>
     </DialogPortal>
   );
-}
+});
+
+DialogContent.displayName = "DialogContent";
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (

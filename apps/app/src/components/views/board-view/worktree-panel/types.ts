@@ -22,7 +22,6 @@ export interface DevServerInfo {
 
 export interface FeatureInfo {
   id: string;
-  worktreePath?: string;
   branchName?: string;
 }
 
@@ -33,6 +32,7 @@ export interface WorktreePanelProps {
   onCommit: (worktree: WorktreeInfo) => void;
   onCreatePR: (worktree: WorktreeInfo) => void;
   onCreateBranch: (worktree: WorktreeInfo) => void;
+  onRemovedWorktrees?: (removedWorktrees: Array<{ path: string; branch: string }>) => void;
   runningFeatureIds?: string[];
   features?: FeatureInfo[];
   refreshTrigger?: number;

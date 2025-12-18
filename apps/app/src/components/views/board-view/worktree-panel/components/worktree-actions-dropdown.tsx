@@ -170,7 +170,8 @@ export function WorktreeActionsDropdown({
             Commit Changes
           </DropdownMenuItem>
         )}
-        {(worktree.branch !== "main" || worktree.hasChanges) && (
+        {/* Show PR option for non-primary worktrees, or primary worktree with changes */}
+        {(!worktree.isMain || worktree.hasChanges) && (
           <DropdownMenuItem onClick={() => onCreatePR(worktree)} className="text-xs">
             <GitPullRequest className="w-3.5 h-3.5 mr-2" />
             Create Pull Request

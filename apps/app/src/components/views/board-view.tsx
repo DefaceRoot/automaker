@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   PointerSensor,
   useSensor,
@@ -10,7 +10,9 @@ import {
 } from "@dnd-kit/core";
 import { useAppStore, Feature } from "@/store/app-store";
 import { getElectronAPI } from "@/lib/electron";
+import type { AutoModeEvent } from "@/types/electron";
 import { pathsEqual } from "@/lib/utils";
+import { getBlockingDependencies } from "@/lib/dependency-resolver";
 import { BoardBackgroundModal } from "@/components/dialogs/board-background-modal";
 import { RefreshCw } from "lucide-react";
 import { useAutoMode } from "@/hooks/use-auto-mode";
@@ -25,7 +27,7 @@ import {
   AddFeatureDialog,
   AgentOutputModal,
   CompletedFeaturesModal,
-  DeleteAllVerifiedDialog,
+  ArchiveAllVerifiedDialog,
   DeleteCompletedFeatureDialog,
   EditFeatureDialog,
   FeatureSuggestionsDialog,
@@ -76,6 +78,10 @@ export function BoardView() {
     setCurrentWorktree,
     getWorktrees,
     setWorktrees,
+    useWorktrees,
+    enableDependencyBlocking,
+    isPrimaryWorktreeBranch,
+    getPrimaryWorktreeBranch,
   } = useAppStore();
   const shortcuts = useKeyboardShortcutsConfig();
   const {
@@ -93,7 +99,7 @@ export function BoardView() {
   const [featuresWithContext, setFeaturesWithContext] = useState<Set<string>>(
     new Set()
   );
-  const [showDeleteAllVerifiedDialog, setShowDeleteAllVerifiedDialog] =
+  const [showArchiveAllVerifiedDialog, setShowArchiveAllVerifiedDialog] =
     useState(false);
   const [showBoardBackgroundModal, setShowBoardBackgroundModal] =
     useState(false);
@@ -285,6 +291,27 @@ export function BoardView() {
   const { persistFeatureCreate, persistFeatureUpdate, persistFeatureDelete } =
     useBoardPersistence({ currentProject });
 
+  // Memoize the removed worktrees handler to prevent infinite loops
+  const handleRemovedWorktrees = useCallback(
+    (removedWorktrees: Array<{ path: string; branch: string }>) => {
+      // Reset features that were assigned to the removed worktrees (by branch)
+      hookFeatures.forEach((feature) => {
+        const matchesRemovedWorktree = removedWorktrees.some((removed) => {
+          // Match by branch name since worktreePath is no longer stored
+          return feature.branchName === removed.branch;
+        });
+
+        if (matchesRemovedWorktree) {
+          // Reset the feature's branch assignment
+          persistFeatureUpdate(feature.id, {
+            branchName: null as unknown as string | undefined,
+          });
+        }
+      });
+    },
+    [hookFeatures, persistFeatureUpdate]
+  );
+
   // Get in-progress features for keyboard shortcuts (needed before actions hook)
   const inProgressFeaturesForShortcuts = useMemo(() => {
     return hookFeatures.filter((f) => {
@@ -293,13 +320,12 @@ export function BoardView() {
     });
   }, [hookFeatures, runningAutoTasks]);
 
-  // Get current worktree info (path and branch) for filtering features
+  // Get current worktree info (path) for filtering features
   // This needs to be before useBoardActions so we can pass currentWorktreeBranch
   const currentWorktreeInfo = currentProject
     ? getCurrentWorktree(currentProject.path)
     : null;
   const currentWorktreePath = currentWorktreeInfo?.path ?? null;
-  const currentWorktreeBranch = currentWorktreeInfo?.branch ?? null;
   const worktreesByProject = useAppStore((s) => s.worktreesByProject);
   const worktrees = useMemo(
     () =>
@@ -309,8 +335,25 @@ export function BoardView() {
     [currentProject, worktreesByProject]
   );
 
+  // Get the branch for the currently selected worktree
+  // Find the worktree that matches the current selection, or use main worktree
+  const selectedWorktree = useMemo(() => {
+    if (currentWorktreePath === null) {
+      // Primary worktree selected - find the main worktree
+      return worktrees.find((w) => w.isMain);
+    } else {
+      // Specific worktree selected - find it by path
+      return worktrees.find(
+        (w) => !w.isMain && pathsEqual(w.path, currentWorktreePath)
+      );
+    }
+  }, [worktrees, currentWorktreePath]);
+
+  // Get the current branch from the selected worktree (not from store which may be stale)
+  const currentWorktreeBranch = selectedWorktree?.branch ?? null;
+
   // Get the branch for the currently selected worktree (for defaulting new features)
-  // Use the branch from currentWorktreeInfo, or fall back to main worktree's branch
+  // Use the branch from selectedWorktree, or fall back to main worktree's branch
   const selectedWorktreeBranch =
     currentWorktreeBranch || worktrees.find((w) => w.isMain)?.branch || "main";
 
@@ -334,7 +377,7 @@ export function BoardView() {
     handleOutputModalNumberKeyPress,
     handleForceStopFeature,
     handleStartNextFeatures,
-    handleDeleteAllVerified,
+    handleArchiveAllVerified,
   } = useBoardActions({
     currentProject,
     features: hookFeatures,
@@ -362,6 +405,205 @@ export function BoardView() {
     currentWorktreeBranch,
   });
 
+  // Client-side auto mode: periodically check for backlog items and move them to in-progress
+  // Use a ref to track the latest auto mode state so async operations always check the current value
+  const autoModeRunningRef = useRef(autoMode.isRunning);
+  useEffect(() => {
+    autoModeRunningRef.current = autoMode.isRunning;
+  }, [autoMode.isRunning]);
+
+  // Use a ref to track the latest features to avoid effect re-runs when features change
+  const hookFeaturesRef = useRef(hookFeatures);
+  useEffect(() => {
+    hookFeaturesRef.current = hookFeatures;
+  }, [hookFeatures]);
+
+  // Track features that are pending (started but not yet confirmed running)
+  const pendingFeaturesRef = useRef<Set<string>>(new Set());
+
+  // Listen to auto mode events to remove features from pending when they start running
+  useEffect(() => {
+    const api = getElectronAPI();
+    if (!api?.autoMode) return;
+
+    const unsubscribe = api.autoMode.onEvent((event: AutoModeEvent) => {
+      if (!currentProject) return;
+
+      // Only process events for the current project
+      const eventProjectPath =
+        "projectPath" in event ? event.projectPath : undefined;
+      if (eventProjectPath && eventProjectPath !== currentProject.path) {
+        return;
+      }
+
+      switch (event.type) {
+        case "auto_mode_feature_start":
+          // Feature is now confirmed running - remove from pending
+          if (event.featureId) {
+            pendingFeaturesRef.current.delete(event.featureId);
+          }
+          break;
+
+        case "auto_mode_feature_complete":
+        case "auto_mode_error":
+          // Feature completed or errored - remove from pending if still there
+          if (event.featureId) {
+            pendingFeaturesRef.current.delete(event.featureId);
+          }
+          break;
+      }
+    });
+
+    return unsubscribe;
+  }, [currentProject]);
+
+  useEffect(() => {
+    if (!autoMode.isRunning || !currentProject) {
+      return;
+    }
+
+    let isChecking = false;
+    let isActive = true; // Track if this effect is still active
+
+    const checkAndStartFeatures = async () => {
+      // Check if auto mode is still running and effect is still active
+      // Use ref to get the latest value, not the closure value
+      if (!isActive || !autoModeRunningRef.current || !currentProject) {
+        return;
+      }
+
+      // Prevent concurrent executions
+      if (isChecking) {
+        return;
+      }
+
+      isChecking = true;
+      try {
+        // Double-check auto mode is still running before proceeding
+        if (!isActive || !autoModeRunningRef.current || !currentProject) {
+          return;
+        }
+
+        // Count currently running tasks + pending features
+        const currentRunning =
+          runningAutoTasks.length + pendingFeaturesRef.current.size;
+        const availableSlots = maxConcurrency - currentRunning;
+
+        // No available slots, skip check
+        if (availableSlots <= 0) {
+          return;
+        }
+
+        // Filter backlog features by the currently selected worktree branch
+        // This logic mirrors use-board-column-features.ts for consistency
+        // Use ref to get the latest features without causing effect re-runs
+        const currentFeatures = hookFeaturesRef.current;
+        const backlogFeatures = currentFeatures.filter((f) => {
+          if (f.status !== "backlog") return false;
+
+          const featureBranch = f.branchName;
+
+          // Features without branchName are considered unassigned (show only on primary worktree)
+          if (!featureBranch) {
+            // No branch assigned - show only when viewing primary worktree
+            const isViewingPrimary = currentWorktreePath === null;
+            return isViewingPrimary;
+          }
+
+          if (currentWorktreeBranch === null) {
+            // We're viewing main but branch hasn't been initialized yet
+            // Show features assigned to primary worktree's branch
+            return currentProject.path
+              ? isPrimaryWorktreeBranch(currentProject.path, featureBranch)
+              : false;
+          }
+
+          // Match by branch name
+          return featureBranch === currentWorktreeBranch;
+        });
+
+        if (backlogFeatures.length === 0) {
+          return;
+        }
+
+        // Sort by priority (lower number = higher priority, priority 1 is highest)
+        const sortedBacklog = [...backlogFeatures].sort(
+          (a, b) => (a.priority || 999) - (b.priority || 999)
+        );
+
+        // Filter out features with blocking dependencies if dependency blocking is enabled
+        const eligibleFeatures = enableDependencyBlocking
+          ? sortedBacklog.filter((f) => {
+              const blockingDeps = getBlockingDependencies(f, currentFeatures);
+              return blockingDeps.length === 0;
+            })
+          : sortedBacklog;
+
+        // Start features up to available slots
+        const featuresToStart = eligibleFeatures.slice(0, availableSlots);
+
+        for (const feature of featuresToStart) {
+          // Check again before starting each feature
+          if (!isActive || !autoModeRunningRef.current || !currentProject) {
+            return;
+          }
+
+          // Simplified: No worktree creation on client - server derives workDir from feature.branchName
+          // If feature has no branchName and primary worktree is selected, assign primary branch
+          if (currentWorktreePath === null && !feature.branchName) {
+            const primaryBranch =
+              (currentProject.path
+                ? getPrimaryWorktreeBranch(currentProject.path)
+                : null) || "main";
+            await persistFeatureUpdate(feature.id, {
+              branchName: primaryBranch,
+            });
+          }
+
+          // Final check before starting implementation
+          if (!isActive || !autoModeRunningRef.current || !currentProject) {
+            return;
+          }
+
+          // Start the implementation - server will derive workDir from feature.branchName
+          const started = await handleStartImplementation(feature);
+
+          // If successfully started, track it as pending until we receive the start event
+          if (started) {
+            pendingFeaturesRef.current.add(feature.id);
+          }
+        }
+      } finally {
+        isChecking = false;
+      }
+    };
+
+    // Check immediately, then every 3 seconds
+    checkAndStartFeatures();
+    const interval = setInterval(checkAndStartFeatures, 3000);
+
+    return () => {
+      // Mark as inactive to prevent any pending async operations from continuing
+      isActive = false;
+      clearInterval(interval);
+      // Clear pending features when effect unmounts or dependencies change
+      pendingFeaturesRef.current.clear();
+    };
+  }, [
+    autoMode.isRunning,
+    currentProject,
+    runningAutoTasks,
+    maxConcurrency,
+    // hookFeatures is accessed via hookFeaturesRef to prevent effect re-runs
+    currentWorktreeBranch,
+    currentWorktreePath,
+    getPrimaryWorktreeBranch,
+    isPrimaryWorktreeBranch,
+    enableDependencyBlocking,
+    persistFeatureUpdate,
+    handleStartImplementation,
+  ]);
+
   // Use keyboard shortcuts hook (after actions hook)
   useBoardKeyboardShortcuts({
     features: hookFeatures,
@@ -378,8 +620,6 @@ export function BoardView() {
     runningAutoTasks,
     persistFeatureUpdate,
     handleStartImplementation,
-    projectPath: currentProject?.path || null,
-    onWorktreeCreated: () => setWorktreeRefreshKey((k) => k + 1),
   });
 
   // Use column features hook
@@ -554,8 +794,13 @@ export function BoardView() {
         maxConcurrency={maxConcurrency}
         onConcurrencyChange={setMaxConcurrency}
         isAutoModeRunning={autoMode.isRunning}
-        onStartAutoMode={() => autoMode.start()}
-        onStopAutoMode={() => autoMode.stop()}
+        onAutoModeToggle={(enabled) => {
+          if (enabled) {
+            autoMode.start();
+          } else {
+            autoMode.stop();
+          }
+        }}
         onAddFeature={() => setShowAddDialog(true)}
         addFeatureShortcut={{
           key: shortcuts.addFeature,
@@ -586,10 +831,10 @@ export function BoardView() {
           setSelectedWorktreeForAction(worktree);
           setShowCreateBranchDialog(true);
         }}
+        onRemovedWorktrees={handleRemovedWorktrees}
         runningFeatureIds={runningAutoTasks}
         features={hookFeatures.map((f) => ({
           id: f.id,
-          worktreePath: f.worktreePath,
           branchName: f.branchName,
         }))}
       />
@@ -646,7 +891,7 @@ export function BoardView() {
           onStartNextFeatures={handleStartNextFeatures}
           onShowSuggestions={() => setShowSuggestionsDialog(true)}
           suggestionsCount={suggestionsCount}
-          onDeleteAllVerified={() => setShowDeleteAllVerifiedDialog(true)}
+          onArchiveAllVerified={() => setShowArchiveAllVerifiedDialog(true)}
         />
       </div>
 
@@ -686,6 +931,7 @@ export function BoardView() {
         branchSuggestions={branchSuggestions}
         defaultSkipTests={defaultSkipTests}
         defaultBranch={selectedWorktreeBranch}
+        currentBranch={currentWorktreeBranch || undefined}
         isMaximized={isMaximized}
         showProfilesOnly={showProfilesOnly}
         aiProfiles={aiProfiles}
@@ -698,6 +944,7 @@ export function BoardView() {
         onUpdate={handleUpdateFeature}
         categorySuggestions={categorySuggestions}
         branchSuggestions={branchSuggestions}
+        currentBranch={currentWorktreeBranch || undefined}
         isMaximized={isMaximized}
         showProfilesOnly={showProfilesOnly}
         aiProfiles={aiProfiles}
@@ -714,14 +961,14 @@ export function BoardView() {
         onNumberKeyPress={handleOutputModalNumberKeyPress}
       />
 
-      {/* Delete All Verified Dialog */}
-      <DeleteAllVerifiedDialog
-        open={showDeleteAllVerifiedDialog}
-        onOpenChange={setShowDeleteAllVerifiedDialog}
+      {/* Archive All Verified Dialog */}
+      <ArchiveAllVerifiedDialog
+        open={showArchiveAllVerifiedDialog}
+        onOpenChange={setShowArchiveAllVerifiedDialog}
         verifiedCount={getColumnFeatures("verified").length}
         onConfirm={async () => {
-          await handleDeleteAllVerified();
-          setShowDeleteAllVerifiedDialog(false);
+          await handleArchiveAllVerified();
+          setShowArchiveAllVerifiedDialog(false);
         }}
       />
 
@@ -819,19 +1066,13 @@ export function BoardView() {
         projectPath={currentProject.path}
         worktree={selectedWorktreeForAction}
         onDeleted={(deletedWorktree, _deletedBranch) => {
-          // Reset features that were assigned to the deleted worktree
+          // Reset features that were assigned to the deleted worktree (by branch)
           hookFeatures.forEach((feature) => {
-            const matchesByPath =
-              feature.worktreePath &&
-              pathsEqual(feature.worktreePath, deletedWorktree.path);
-            const matchesByBranch =
-              feature.branchName === deletedWorktree.branch;
-
-            if (matchesByPath || matchesByBranch) {
-              // Reset the feature's worktree assignment
+            // Match by branch name since worktreePath is no longer stored
+            if (feature.branchName === deletedWorktree.branch) {
+              // Reset the feature's branch assignment
               persistFeatureUpdate(feature.id, {
                 branchName: null as unknown as string | undefined,
-                worktreePath: null as unknown as string | undefined,
               });
             }
           });

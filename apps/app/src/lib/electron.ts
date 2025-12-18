@@ -80,7 +80,6 @@ export interface RunningAgentsResult {
   success: boolean;
   runningAgents?: RunningAgent[];
   totalCount?: number;
-  autoLoopRunning?: boolean;
   error?: string;
 }
 
@@ -217,7 +216,6 @@ export interface AutoModeAPI {
   status: (projectPath?: string) => Promise<{
     success: boolean;
     isRunning?: boolean;
-    autoLoopRunning?: boolean; // Backend uses this name instead of isRunning
     currentFeatureId?: string | null;
     runningFeatures?: string[];
     runningProjects?: string[];
@@ -1449,7 +1447,6 @@ function createMockAutoModeAPI(): AutoModeAPI {
       return {
         success: true,
         isRunning: mockAutoModeRunning,
-        autoLoopRunning: mockAutoModeRunning,
         currentFeatureId: mockAutoModeRunning ? "feature-0" : null,
         runningFeatures: Array.from(mockRunningFeatures),
         runningCount: mockRunningFeatures.size,
@@ -2617,7 +2614,6 @@ function createMockRunningAgentsAPI(): RunningAgentsAPI {
         success: true,
         runningAgents,
         totalCount: runningAgents.length,
-        autoLoopRunning: mockAutoModeRunning,
       };
     },
   };

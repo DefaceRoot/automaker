@@ -77,67 +77,13 @@ export function useBoardActions({
     moveFeature,
     useWorktrees,
     enableDependencyBlocking,
+    isPrimaryWorktreeBranch,
+    getPrimaryWorktreeBranch,
   } = useAppStore();
   const autoMode = useAutoMode();
 
-  /**
-   * Get or create the worktree path for a feature based on its branchName.
-   * - If branchName is "main" or empty, returns the project path
-   * - Otherwise, creates a worktree for that branch if needed
-   */
-  const getOrCreateWorktreeForFeature = useCallback(
-    async (feature: Feature): Promise<string | null> => {
-      if (!projectPath) return null;
-
-      const branchName = feature.branchName || "main";
-
-      // If targeting main branch, use the project path directly
-      if (branchName === "main" || branchName === "master") {
-        return projectPath;
-      }
-
-      // For other branches, create a worktree if it doesn't exist
-      try {
-        const api = getElectronAPI();
-        if (!api?.worktree?.create) {
-          console.error("[BoardActions] Worktree API not available");
-          return projectPath;
-        }
-
-        // Try to create the worktree (will return existing if already exists)
-        const result = await api.worktree.create(projectPath, branchName);
-
-        if (result.success && result.worktree) {
-          console.log(
-            `[BoardActions] Worktree ready for branch "${branchName}": ${result.worktree.path}`
-          );
-          if (result.worktree.isNew) {
-            toast.success(`Worktree created for branch "${branchName}"`, {
-              description: "A new worktree was created for this feature.",
-            });
-          }
-          return result.worktree.path;
-        } else {
-          console.error(
-            "[BoardActions] Failed to create worktree:",
-            result.error
-          );
-          toast.error("Failed to create worktree", {
-            description:
-              result.error || "Could not create worktree for this branch.",
-          });
-          return projectPath; // Fall back to project path
-        }
-      } catch (error) {
-        console.error("[BoardActions] Error creating worktree:", error);
-        toast.error("Error creating worktree", {
-          description: error instanceof Error ? error.message : "Unknown error",
-        });
-        return projectPath; // Fall back to project path
-      }
-    },
-    [projectPath]
-  );
+  // Note: getOrCreateWorktreeForFeature removed - worktrees are now created server-side
+  // at execution time based on feature.branchName
 
   const handleAddFeature = useCallback(
     async (featureData: {
@@ -154,34 +100,24 @@ export function useBoardActions({
       planningMode: PlanningMode;
       requirePlanApproval: boolean;
     }) => {
-      let worktreePath: string | undefined;
-
-      // If worktrees are enabled and a non-main branch is selected, create the worktree
-      if (useWorktrees && featureData.branchName) {
-        const branchName = featureData.branchName;
-        if (branchName !== "main" && branchName !== "master") {
-          // Create a temporary feature-like object for getOrCreateWorktreeForFeature
-          const tempFeature = { branchName } as Feature;
-          const path = await getOrCreateWorktreeForFeature(tempFeature);
-          if (path && path !== projectPath) {
-            worktreePath = path;
-            // Refresh worktree selector after creating worktree
-            onWorktreeCreated?.();
-          }
-        }
-      }
+      // Simplified: Only store branchName, no worktree creation on add
+      // Worktrees are created at execution time (when feature starts)
+      // Empty string means "unassigned" (show only on primary worktree) - convert to undefined
+      // Non-empty string is the actual branch name (for non-primary worktrees)
+      const finalBranchName = featureData.branchName || undefined;
 
       const newFeatureData = {
         ...featureData,
         status: "backlog" as const,
-        worktreePath,
+        branchName: finalBranchName,
+        // No worktreePath - derived at runtime from branchName
       };
       const createdFeature = addFeature(newFeatureData);
       // Must await to ensure feature exists on server before user can drag it
       await persistFeatureCreate(createdFeature);
       saveCategory(featureData.category);
     },
-    [addFeature, persistFeatureCreate, saveCategory, useWorktrees, getOrCreateWorktreeForFeature, projectPath, onWorktreeCreated]
+    [addFeature, persistFeatureCreate, saveCategory]
   );
 
   const handleUpdateFeature = useCallback(
@@ -201,44 +137,12 @@ export function useBoardActions({
         requirePlanApproval?: boolean;
       }
     ) => {
-      // Get the current feature to check if branch is changing
-      const currentFeature = features.find((f) => f.id === featureId);
-      const currentBranch = currentFeature?.branchName || "main";
-      const newBranch = updates.branchName || "main";
-      const branchIsChanging = currentBranch !== newBranch;
+      const finalBranchName = updates.branchName || undefined;
 
-      let worktreePath: string | undefined;
-      let shouldClearWorktreePath = false;
-
-      // If worktrees are enabled and branch is changing to a non-main branch, create worktree
-      if (useWorktrees && branchIsChanging) {
-        if (newBranch === "main" || newBranch === "master") {
-          // Changing to main - clear the worktreePath
-          shouldClearWorktreePath = true;
-        } else {
-          // Changing to a feature branch - create worktree if needed
-          const tempFeature = { branchName: newBranch } as Feature;
-          const path = await getOrCreateWorktreeForFeature(tempFeature);
-          if (path && path !== projectPath) {
-            worktreePath = path;
-            // Refresh worktree selector after creating worktree
-            onWorktreeCreated?.();
-          }
-        }
-      }
-
-      // Build final updates with worktreePath if it was changed
-      let finalUpdates: typeof updates & { worktreePath?: string };
-      if (branchIsChanging && useWorktrees) {
-        if (shouldClearWorktreePath) {
-          // Use null to clear the value in persistence (cast to work around type system)
-          finalUpdates = { ...updates, worktreePath: null as unknown as string | undefined };
-        } else {
-          finalUpdates = { ...updates, worktreePath };
-        }
-      } else {
-        finalUpdates = updates;
-      }
+      const finalUpdates = {
+        ...updates,
+        branchName: finalBranchName,
+      };
 
       updateFeature(featureId, finalUpdates);
       persistFeatureUpdate(featureId, finalUpdates);
@@ -247,7 +151,7 @@ export function useBoardActions({
       }
       setEditingFeature(null);
     },
-    [updateFeature, persistFeatureUpdate, saveCategory, setEditingFeature, features, useWorktrees, getOrCreateWorktreeForFeature, projectPath, onWorktreeCreated]
+    [updateFeature, persistFeatureUpdate, saveCategory, setEditingFeature]
   );
 
   const handleDeleteFeature = useCallback(
@@ -312,21 +216,18 @@ export function useBoardActions({
           return;
         }
 
-        // Use the feature's assigned worktreePath (set when moving to in_progress)
-        // This ensures work happens in the correct worktree based on the feature's branchName
-        const featureWorktreePath = feature.worktreePath;
-
+        // Server derives workDir from feature.branchName at execution time
         const result = await api.autoMode.runFeature(
           currentProject.path,
           feature.id,
-          useWorktrees,
-          featureWorktreePath || undefined
+          useWorktrees
+          // No worktreePath - server derives from feature.branchName
         );
 
         if (result.success) {
           console.log(
-            "[Board] Feature run started successfully in worktree:",
-            featureWorktreePath || "main"
+            "[Board] Feature run started successfully, branch:",
+            feature.branchName || "default"
           );
         } else {
           console.error("[Board] Failed to run feature:", result.error);
@@ -355,10 +256,12 @@ export function useBoardActions({
       if (enableDependencyBlocking) {
         const blockingDeps = getBlockingDependencies(feature, features);
         if (blockingDeps.length > 0) {
-          const depDescriptions = blockingDeps.map(depId => {
-            const dep = features.find(f => f.id === depId);
-            return dep ? truncateDescription(dep.description, 40) : depId;
-          }).join(", ");
+          const depDescriptions = blockingDeps
+            .map((depId) => {
+              const dep = features.find((f) => f.id === depId);
+              return dep ? truncateDescription(dep.description, 40) : depId;
+            })
+            .join(", ");
 
           toast.warning("Starting feature with incomplete dependencies", {
             description: `This feature depends on: ${depDescriptions}`,
@@ -377,7 +280,14 @@ export function useBoardActions({
       await handleRunFeature(feature);
       return true;
     },
-    [autoMode, enableDependencyBlocking, features, updateFeature, persistFeatureUpdate, handleRunFeature]
+    [
+      autoMode,
+      enableDependencyBlocking,
+      features,
+      updateFeature,
+      persistFeatureUpdate,
+      handleRunFeature,
+    ]
   );
 
   const handleVerifyFeature = useCallback(
@@ -494,7 +404,6 @@ export function useBoardActions({
 
     const featureId = followUpFeature.id;
     const featureDescription = followUpFeature.description;
-    const prompt = followUpPrompt;
 
     const api = getElectronAPI();
     if (!api?.autoMode?.followUpFeature) {
@@ -526,15 +435,14 @@ export function useBoardActions({
     });
 
     const imagePaths = followUpImagePaths.map((img) => img.path);
-    // Use the feature's worktreePath to ensure work happens in the correct branch
-    const featureWorktreePath = followUpFeature.worktreePath;
+    // Server derives workDir from feature.branchName at execution time
     api.autoMode
       .followUpFeature(
         currentProject.path,
         followUpFeature.id,
         followUpPrompt,
-        imagePaths,
-        featureWorktreePath
+        imagePaths
+        // No worktreePath - server derives from feature.branchName
       )
       .catch((error) => {
         console.error("[Board] Error sending follow-up:", error);
@@ -574,11 +482,11 @@ export function useBoardActions({
           return;
         }
 
-        // Pass the feature's worktreePath to ensure commits happen in the correct worktree
+        // Server derives workDir from feature.branchName
         const result = await api.autoMode.commitFeature(
           currentProject.path,
-          feature.id,
-          feature.worktreePath
+          feature.id
+          // No worktreePath - server derives from feature.branchName
         );
 
         if (result.success) {
@@ -763,23 +671,25 @@ export function useBoardActions({
   const handleStartNextFeatures = useCallback(async () => {
     // Filter backlog features by the currently selected worktree branch
     // This ensures "G" only starts features from the filtered list
+    const primaryBranch = projectPath
+      ? getPrimaryWorktreeBranch(projectPath)
+      : null;
     const backlogFeatures = features.filter((f) => {
       if (f.status !== "backlog") return false;
 
-      // Determine the feature's branch (default to "main" if not set)
-      const featureBranch = f.branchName || "main";
+      // Determine the feature's branch (default to primary branch if not set)
+      const featureBranch = f.branchName || primaryBranch || "main";
 
-      // If no worktree is selected (currentWorktreeBranch is null or main-like),
-      // show features with no branch or "main"/"master" branch
+      // If no worktree is selected (currentWorktreeBranch is null or matches primary),
+      // show features with no branch or primary branch
       if (
         !currentWorktreeBranch ||
-        currentWorktreeBranch === "main" ||
-        currentWorktreeBranch === "master"
+        (projectPath &&
+          isPrimaryWorktreeBranch(projectPath, currentWorktreeBranch))
       ) {
         return (
           !f.branchName ||
-          featureBranch === "main" ||
-          featureBranch === "master"
+          (projectPath && isPrimaryWorktreeBranch(projectPath, featureBranch))
         );
       }
 
@@ -799,57 +709,65 @@ export function useBoardActions({
     }
 
     if (backlogFeatures.length === 0) {
+      const isOnPrimaryBranch =
+        !currentWorktreeBranch ||
+        (projectPath &&
+          isPrimaryWorktreeBranch(projectPath, currentWorktreeBranch));
       toast.info("Backlog empty", {
-        description:
-          currentWorktreeBranch &&
-          currentWorktreeBranch !== "main" &&
-          currentWorktreeBranch !== "master"
-            ? `No features in backlog for branch "${currentWorktreeBranch}".`
-            : "No features in backlog to start.",
+        description: !isOnPrimaryBranch
+          ? `No features in backlog for branch "${currentWorktreeBranch}".`
+          : "No features in backlog to start.",
       });
       return;
     }
 
     // Sort by priority (lower number = higher priority, priority 1 is highest)
-    // This matches the auto mode service behavior for consistency
-    const sortedBacklog = [...backlogFeatures].sort(
-      (a, b) => (a.priority || 999) - (b.priority || 999)
-    );
+    // Features with blocking dependencies are sorted to the end
+    const sortedBacklog = [...backlogFeatures].sort((a, b) => {
+      const aBlocked = enableDependencyBlocking
+        ? getBlockingDependencies(a, features).length > 0
+        : false;
+      const bBlocked = enableDependencyBlocking
+        ? getBlockingDependencies(b, features).length > 0
+        : false;
+
+      // Blocked features go to the end
+      if (aBlocked && !bBlocked) return 1;
+      if (!aBlocked && bBlocked) return -1;
+
+      // Within same blocked/unblocked group, sort by priority
+      return (a.priority || 999) - (b.priority || 999);
+    });
+
+    // Find the first feature without blocking dependencies
+    const featureToStart = sortedBacklog.find((f) => {
+      if (!enableDependencyBlocking) return true;
+      return getBlockingDependencies(f, features).length === 0;
+    });
+
+    if (!featureToStart) {
+      toast.info("No eligible features", {
+        description:
+          "All backlog features have unmet dependencies. Complete their dependencies first.",
+      });
+      return;
+    }
 
     // Start only one feature per keypress (user must press again for next)
-    const featuresToStart = sortedBacklog.slice(0, 1);
-
-    for (const feature of featuresToStart) {
-      // Only create worktrees if the feature is enabled
-      let worktreePath: string | null = null;
-      if (useWorktrees) {
-        // Get or create worktree based on the feature's assigned branch (same as drag-to-in-progress)
-        worktreePath = await getOrCreateWorktreeForFeature(feature);
-        if (worktreePath) {
-          await persistFeatureUpdate(feature.id, { worktreePath });
-        }
-        // Refresh worktree selector after creating worktree
-        onWorktreeCreated?.();
-      }
-      // Start the implementation
-      // Pass feature with worktreePath so handleRunFeature uses the correct path
-      await handleStartImplementation({
-        ...feature,
-        worktreePath: worktreePath || undefined,
-      });
-    }
+    // Simplified: No worktree creation on client - server derives workDir from feature.branchName
+    await handleStartImplementation(featureToStart);
   }, [
     features,
     runningAutoTasks,
     handleStartImplementation,
-    getOrCreateWorktreeForFeature,
-    persistFeatureUpdate,
-    onWorktreeCreated,
     currentWorktreeBranch,
-    useWorktrees,
+    projectPath,
+    isPrimaryWorktreeBranch,
+    getPrimaryWorktreeBranch,
+    enableDependencyBlocking,
   ]);
 
-  const handleDeleteAllVerified = useCallback(async () => {
+  const handleArchiveAllVerified = useCallback(async () => {
     const verifiedFeatures = features.filter((f) => f.status === "verified");
 
     for (const feature of verifiedFeatures) {
@@ -858,22 +776,29 @@ export function useBoardActions({
         try {
           await autoMode.stopFeature(feature.id);
         } catch (error) {
-          console.error("[Board] Error stopping feature before delete:", error);
+          console.error(
+            "[Board] Error stopping feature before archive:",
+            error
+          );
         }
       }
-      removeFeature(feature.id);
-      persistFeatureDelete(feature.id);
+      // Archive the feature by setting status to completed
+      const updates = {
+        status: "completed" as const,
+      };
+      updateFeature(feature.id, updates);
+      persistFeatureUpdate(feature.id, updates);
     }
 
-    toast.success("All verified features deleted", {
-      description: `Deleted ${verifiedFeatures.length} feature(s).`,
+    toast.success("All verified features archived", {
+      description: `Archived ${verifiedFeatures.length} feature(s).`,
     });
   }, [
     features,
     runningAutoTasks,
     autoMode,
-    removeFeature,
-    persistFeatureDelete,
+    updateFeature,
+    persistFeatureUpdate,
   ]);
 
   return {
@@ -895,6 +820,6 @@ export function useBoardActions({
     handleOutputModalNumberKeyPress,
     handleForceStopFeature,
     handleStartNextFeatures,
-    handleDeleteAllVerified,
+    handleArchiveAllVerified,
   };
 }

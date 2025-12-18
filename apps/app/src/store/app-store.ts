@@ -299,9 +299,8 @@ export interface Feature {
   error?: string; // Error message if the agent errored during processing
   priority?: number; // Priority: 1 = high, 2 = medium, 3 = low
   dependencies?: string[]; // Array of feature IDs this feature depends on
-  // Worktree info - set when a feature is being worked on in an isolated git worktree
-  worktreePath?: string; // Path to the worktree directory
-  branchName?: string; // Name of the feature branch
+  // Branch info - worktree path is derived at runtime from branchName
+  branchName?: string; // Name of the feature branch (undefined = use current worktree)
   justFinishedAt?: string; // ISO timestamp when agent just finished and moved to waiting_approval (shows badge for 2 minutes)
   planningMode?: PlanningMode; // Planning mode for this feature
   planSpec?: PlanSpec; // Generated spec/plan data
@@ -433,7 +432,10 @@ export interface AppState {
 
   // User-managed Worktrees (per-project)
   // projectPath -> { path: worktreePath or null for main, branch: branch name }
-  currentWorktreeByProject: Record<string, { path: string | null; branch: string }>;
+  currentWorktreeByProject: Record<
+    string,
+    { path: string | null; branch: string }
+  >;
   worktreesByProject: Record<
     string,
     Array<{
@@ -629,7 +631,11 @@ export interface AppActions {
 
   // Worktree Settings actions
   setUseWorktrees: (enabled: boolean) => void;
-  setCurrentWorktree: (projectPath: string, worktreePath: string | null, branch: string) => void;
+  setCurrentWorktree: (
+    projectPath: string,
+    worktreePath: string | null,
+    branch: string
+  ) => void;
   setWorktrees: (
     projectPath: string,
     worktrees: Array<{
@@ -640,7 +646,9 @@ export interface AppActions {
       changedFilesCount?: number;
     }>
   ) => void;
-  getCurrentWorktree: (projectPath: string) => { path: string | null; branch: string } | null;
+  getCurrentWorktree: (
+    projectPath: string
+  ) => { path: string | null; branch: string } | null;
   getWorktrees: (projectPath: string) => Array<{
     path: string;
     branch: string;
@@ -648,6 +656,8 @@ export interface AppActions {
     hasChanges?: boolean;
     changedFilesCount?: number;
   }>;
+  isPrimaryWorktreeBranch: (projectPath: string, branchName: string) => boolean;
+  getPrimaryWorktreeBranch: (projectPath: string) => string | null;
 
   // Profile Display Settings actions
   setShowProfilesOnly: (enabled: boolean) => void;
@@ -1402,7 +1412,8 @@ export const useAppStore = create<AppState & AppActions>()(
 
       // Feature Default Settings actions
       setDefaultSkipTests: (skip) => set({ defaultSkipTests: skip }),
-      setEnableDependencyBlocking: (enabled) => set({ enableDependencyBlocking: enabled }),
+      setEnableDependencyBlocking: (enabled) =>
+        set({ enableDependencyBlocking: enabled }),
 
       // Worktree Settings actions
       setUseWorktrees: (enabled) => set({ useWorktrees: enabled }),
@@ -1433,6 +1444,18 @@ export const useAppStore = create<AppState & AppActions>()(
 
       getWorktrees: (projectPath) => {
         return get().worktreesByProject[projectPath] ?? [];
+      },
+
+      isPrimaryWorktreeBranch: (projectPath, branchName) => {
+        const worktrees = get().worktreesByProject[projectPath] ?? [];
+        const primary = worktrees.find((w) => w.isMain);
+        return primary?.branch === branchName;
+      },
+
+      getPrimaryWorktreeBranch: (projectPath) => {
+        const worktrees = get().worktreesByProject[projectPath] ?? [];
+        const primary = worktrees.find((w) => w.isMain);
+        return primary?.branch ?? null;
       },
 
       // Profile Display Settings actions
@@ -2298,7 +2321,8 @@ export const useAppStore = create<AppState & AppActions>()(
         // Settings
         apiKeys: state.apiKeys,
         maxConcurrency: state.maxConcurrency,
-        autoModeByProject: state.autoModeByProject,
+        // Note: autoModeByProject is intentionally NOT persisted
+        // Auto-mode should always default to OFF on app refresh
         defaultSkipTests: state.defaultSkipTests,
         enableDependencyBlocking: state.enableDependencyBlocking,
         useWorktrees: state.useWorktrees,

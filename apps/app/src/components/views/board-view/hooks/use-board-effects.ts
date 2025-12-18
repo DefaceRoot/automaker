@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { getElectronAPI } from "@/lib/electron";
 import { useAppStore } from "@/store/app-store";
-import { useAutoMode } from "@/hooks/use-auto-mode";
 
 interface UseBoardEffectsProps {
   currentProject: { path: string; id: string } | null;
@@ -28,8 +27,6 @@ export function useBoardEffects({
   isLoading,
   setFeaturesWithContext,
 }: UseBoardEffectsProps) {
-  const autoMode = useAutoMode();
-
   // Make current project available globally for modal
   useEffect(() => {
     if (currentProject) {
@@ -101,8 +98,7 @@ export function useBoardEffects({
         const status = await api.autoMode.status(currentProject.path);
         if (status.success) {
           const projectId = currentProject.id;
-          const { clearRunningTasks, addRunningTask, setAutoModeRunning } =
-            useAppStore.getState();
+          const { clearRunningTasks, addRunningTask } = useAppStore.getState();
 
           if (status.runningFeatures) {
             console.log(
@@ -116,14 +112,6 @@ export function useBoardEffects({
               addRunningTask(projectId, featureId);
             });
           }
-
-          const isAutoModeRunning =
-            status.autoLoopRunning ?? status.isRunning ?? false;
-          console.log(
-            "[Board] Syncing auto mode running state:",
-            isAutoModeRunning
-          );
-          setAutoModeRunning(projectId, isAutoModeRunning);
         }
       } catch (error) {
         console.error("[Board] Failed to sync running tasks:", error);

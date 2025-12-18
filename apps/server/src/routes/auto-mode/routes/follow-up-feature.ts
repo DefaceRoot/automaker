@@ -12,13 +12,14 @@ const logger = createLogger("AutoMode");
 export function createFollowUpFeatureHandler(autoModeService: AutoModeService) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { projectPath, featureId, prompt, imagePaths, worktreePath } = req.body as {
-        projectPath: string;
-        featureId: string;
-        prompt: string;
-        imagePaths?: string[];
-        worktreePath?: string;
-      };
+      const { projectPath, featureId, prompt, imagePaths, useWorktrees } =
+        req.body as {
+          projectPath: string;
+          featureId: string;
+          prompt: string;
+          imagePaths?: string[];
+          useWorktrees?: boolean;
+        };
 
       if (!projectPath || !featureId || !prompt) {
         res.status(400).json({
@@ -28,14 +29,25 @@ export function createFollowUpFeatureHandler(autoModeService: AutoModeService) {
         return;
       }
 
-      // Start follow-up in background, using the feature's worktreePath for correct branch
+      // Start follow-up in background
+      // followUpFeature derives workDir from feature.branchName
       autoModeService
-        .followUpFeature(projectPath, featureId, prompt, imagePaths, worktreePath)
+        .followUpFeature(
+          projectPath,
+          featureId,
+          prompt,
+          imagePaths,
+          useWorktrees ?? true
+        )
         .catch((error) => {
           logger.error(
             `[AutoMode] Follow up feature ${featureId} error:`,
             error
           );
+        })
+        .finally(() => {
+          // Release the starting slot when follow-up completes (success or error)
+          // Note: The feature should be in runningFeatures by this point
         });
 
       res.json({ success: true });

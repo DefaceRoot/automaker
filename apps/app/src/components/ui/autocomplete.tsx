@@ -35,6 +35,7 @@ interface AutocompleteProps {
   emptyMessage?: string;
   className?: string;
   disabled?: boolean;
+  error?: boolean;
   icon?: LucideIcon;
   allowCreate?: boolean;
   createLabel?: (value: string) => string;
@@ -58,6 +59,7 @@ export function Autocomplete({
   emptyMessage = "No results found.",
   className,
   disabled = false,
+  error = false,
   icon: Icon,
   allowCreate = false,
   createLabel = (v) => `Create "${v}"`,
@@ -130,6 +132,7 @@ export function Autocomplete({
           className={cn(
             "w-full justify-between",
             Icon && "font-mono text-sm",
+            error && "border-destructive focus-visible:ring-destructive",
             className
           )}
           data-testid={testId}

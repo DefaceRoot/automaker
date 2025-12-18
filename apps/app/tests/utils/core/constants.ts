@@ -97,7 +97,7 @@ export const TEST_IDS = {
   addFeatureButton: "add-feature-button",
   addFeatureDialog: "add-feature-dialog",
   confirmAddFeature: "confirm-add-feature",
-  featureBranchInput: "feature-branch-input",
+  featureBranchInput: "feature-input",
   featureCategoryInput: "feature-category-input",
   worktreeSelector: "worktree-selector",
 

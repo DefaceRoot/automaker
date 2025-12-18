@@ -261,7 +261,7 @@ export const KanbanCard = memo(function KanbanCard({
     feature.status === "backlog" ||
     feature.status === "waiting_approval" ||
     feature.status === "verified" ||
-    (feature.skipTests && !isCurrentAutoTask);
+    (feature.status === "in_progress" && !isCurrentAutoTask);
   const {
     attributes,
     listeners,
