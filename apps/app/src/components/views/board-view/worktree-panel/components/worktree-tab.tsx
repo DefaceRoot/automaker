@@ -1,8 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Globe, Loader2 } from "lucide-react";
+import { RefreshCw, Globe, Loader2, CircleDot } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { WorktreeInfo, BranchInfo, DevServerInfo } from "../types";
 import { BranchSwitchDropdown } from "./branch-switch-dropdown";
 import { WorktreeActionsDropdown } from "./worktree-actions-dropdown";
@@ -10,6 +16,8 @@ import { WorktreeActionsDropdown } from "./worktree-actions-dropdown";
 interface WorktreeTabProps {
   worktree: WorktreeInfo;
   cardCount?: number; // Number of unarchived cards for this branch
+  hasChanges?: boolean; // Whether the worktree has uncommitted changes
+  changedFilesCount?: number; // Number of files with uncommitted changes
   isSelected: boolean;
   isRunning: boolean;
   isActivating: boolean;
@@ -46,6 +54,8 @@ interface WorktreeTabProps {
 export function WorktreeTab({
   worktree,
   cardCount,
+  hasChanges,
+  changedFilesCount,
   isSelected,
   isRunning,
   isActivating,
@@ -78,8 +88,24 @@ export function WorktreeTab({
   onStopDevServer,
   onOpenDevServerUrl,
 }: WorktreeTabProps) {
+  // Determine border color based on state:
+  // - Running features: cyan border (high visibility, indicates active work)
+  // - Uncommitted changes: amber border (warning state, needs attention)
+  // - Both: cyan takes priority (running is more important to see)
+  const getBorderClasses = () => {
+    if (isRunning) {
+      return "ring-2 ring-cyan-500 ring-offset-1 ring-offset-background";
+    }
+    if (hasChanges) {
+      return "ring-2 ring-amber-500 ring-offset-1 ring-offset-background";
+    }
+    return "";
+  };
+
+  const borderClasses = getBorderClasses();
+
   return (
-    <div className="flex items-center">
+    <div className={cn("flex items-center rounded-md", borderClasses)}>
       {worktree.isMain ? (
         <>
           <Button
@@ -103,6 +129,26 @@ export function WorktreeTab({
               <span className="inline-flex items-center justify-center h-4 min-w-[1rem] px-1 text-[10px] font-medium rounded bg-background/80 text-foreground border border-border">
                 {cardCount}
               </span>
+            )}
+            {hasChanges && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className={cn(
+                      "inline-flex items-center justify-center h-4 min-w-[1rem] px-1 text-[10px] font-medium rounded border",
+                      isSelected
+                        ? "bg-amber-500 text-amber-950 border-amber-400"
+                        : "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    )}>
+                      <CircleDot className="w-2.5 h-2.5 mr-0.5" />
+                      {changedFilesCount ?? "!"}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{changedFilesCount ?? "Some"} uncommitted file{changedFilesCount !== 1 ? "s" : ""}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </Button>
           <BranchSwitchDropdown
@@ -146,6 +192,26 @@ export function WorktreeTab({
             <span className="inline-flex items-center justify-center h-4 min-w-[1rem] px-1 text-[10px] font-medium rounded bg-background/80 text-foreground border border-border">
               {cardCount}
             </span>
+          )}
+          {hasChanges && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className={cn(
+                    "inline-flex items-center justify-center h-4 min-w-[1rem] px-1 text-[10px] font-medium rounded border",
+                    isSelected
+                      ? "bg-amber-500 text-amber-950 border-amber-400"
+                      : "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                  )}>
+                    <CircleDot className="w-2.5 h-2.5 mr-0.5" />
+                    {changedFilesCount ?? "!"}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{changedFilesCount ?? "Some"} uncommitted file{changedFilesCount !== 1 ? "s" : ""}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </Button>
       )}

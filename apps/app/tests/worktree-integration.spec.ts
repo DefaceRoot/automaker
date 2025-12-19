@@ -2733,4 +2733,124 @@ test.describe("Worktree Integration Tests", () => {
       "Feature with PR URL persistence - updated"
     );
   });
+
+  test("feature in waiting_approval with prUrl should show Verify button instead of Commit", async ({
+    page,
+  }) => {
+    await setupProjectWithPath(page, testRepo.path);
+    await page.goto("/");
+    await waitForNetworkIdle(page);
+    await waitForBoardView(page);
+
+    // Create a feature
+    await clickAddFeature(page);
+    await fillAddFeatureDialog(page, "Feature with PR for verify test", {
+      category: "Testing",
+    });
+    await confirmAddFeature(page);
+    await page.waitForTimeout(1000);
+
+    // Find the feature file
+    const featuresDir = path.join(testRepo.path, ".automaker", "features");
+    const featureDirs = fs.readdirSync(featuresDir);
+    const featureDir = featureDirs.find((dir) => {
+      const featureFilePath = path.join(featuresDir, dir, "feature.json");
+      if (fs.existsSync(featureFilePath)) {
+        const data = JSON.parse(fs.readFileSync(featureFilePath, "utf-8"));
+        return data.description === "Feature with PR for verify test";
+      }
+      return false;
+    });
+    expect(featureDir).toBeDefined();
+
+    // Update the feature to waiting_approval status with a prUrl
+    const featureFilePath = path.join(featuresDir, featureDir!, "feature.json");
+    let featureData = JSON.parse(fs.readFileSync(featureFilePath, "utf-8"));
+    featureData.status = "waiting_approval";
+    featureData.prUrl = "https://github.com/test/repo/pull/789";
+    fs.writeFileSync(featureFilePath, JSON.stringify(featureData, null, 2));
+
+    // Reload the page to pick up the changes
+    await page.reload();
+    await waitForNetworkIdle(page);
+    await waitForBoardView(page);
+    await page.waitForTimeout(1000);
+
+    // Verify the feature card is in the waiting_approval column
+    const waitingApprovalColumn = page.locator(
+      '[data-testid="kanban-column-waiting_approval"]'
+    );
+    const featureCard = waitingApprovalColumn.locator(
+      `[data-testid="kanban-card-${featureData.id}"]`
+    );
+    await expect(featureCard).toBeVisible({ timeout: 5000 });
+
+    // Verify the Verify button is visible (not Commit button)
+    const verifyButton = page.locator(`[data-testid="verify-${featureData.id}"]`);
+    await expect(verifyButton).toBeVisible({ timeout: 5000 });
+
+    // Verify the Commit button is NOT visible
+    const commitButton = page.locator(`[data-testid="commit-${featureData.id}"]`);
+    await expect(commitButton).not.toBeVisible({ timeout: 2000 });
+  });
+
+  test("feature in waiting_approval without prUrl should show Commit button", async ({
+    page,
+  }) => {
+    await setupProjectWithPath(page, testRepo.path);
+    await page.goto("/");
+    await waitForNetworkIdle(page);
+    await waitForBoardView(page);
+
+    // Create a feature
+    await clickAddFeature(page);
+    await fillAddFeatureDialog(page, "Feature without PR for commit test", {
+      category: "Testing",
+    });
+    await confirmAddFeature(page);
+    await page.waitForTimeout(1000);
+
+    // Find the feature file
+    const featuresDir = path.join(testRepo.path, ".automaker", "features");
+    const featureDirs = fs.readdirSync(featuresDir);
+    const featureDir = featureDirs.find((dir) => {
+      const featureFilePath = path.join(featuresDir, dir, "feature.json");
+      if (fs.existsSync(featureFilePath)) {
+        const data = JSON.parse(fs.readFileSync(featureFilePath, "utf-8"));
+        return data.description === "Feature without PR for commit test";
+      }
+      return false;
+    });
+    expect(featureDir).toBeDefined();
+
+    // Update the feature to waiting_approval status WITHOUT prUrl
+    const featureFilePath = path.join(featuresDir, featureDir!, "feature.json");
+    let featureData = JSON.parse(fs.readFileSync(featureFilePath, "utf-8"));
+    featureData.status = "waiting_approval";
+    // Explicitly do NOT set prUrl
+    fs.writeFileSync(featureFilePath, JSON.stringify(featureData, null, 2));
+
+    // Reload the page to pick up the changes
+    await page.reload();
+    await waitForNetworkIdle(page);
+    await waitForBoardView(page);
+    await page.waitForTimeout(1000);
+
+    // Verify the feature card is in the waiting_approval column
+    const waitingApprovalColumn = page.locator(
+      '[data-testid="kanban-column-waiting_approval"]'
+    );
+    const featureCard = waitingApprovalColumn.locator(
+      `[data-testid="kanban-card-${featureData.id}"]`
+    );
+    await expect(featureCard).toBeVisible({ timeout: 5000 });
+
+    // Verify the Commit button is visible
+    const commitButton = page.locator(`[data-testid="commit-${featureData.id}"]`);
+    await expect(commitButton).toBeVisible({ timeout: 5000 });
+
+    // Verify the Verify button is NOT visible
+    const verifyButton = page.locator(`[data-testid="verify-${featureData.id}"]`);
+    await expect(verifyButton).not.toBeVisible({ timeout: 2000 });
+  });
 });

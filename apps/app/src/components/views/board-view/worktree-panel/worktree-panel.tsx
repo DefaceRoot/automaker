@@ -110,7 +110,7 @@ export function WorktreePanel({
       <GitBranch className="w-4 h-4 text-muted-foreground" />
       <span className="text-sm text-muted-foreground mr-2">Branch:</span>
 
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         {worktrees.map((worktree) => {
           const cardCount = branchCardCounts?.[worktree.branch];
           return (
@@ -118,6 +118,8 @@ export function WorktreePanel({
               key={worktree.path}
               worktree={worktree}
               cardCount={cardCount}
+              hasChanges={worktree.hasChanges}
+              changedFilesCount={worktree.changedFilesCount}
               isSelected={isWorktreeSelected(worktree)}
               isRunning={hasRunningFeatures(worktree)}
               isActivating={isActivating}

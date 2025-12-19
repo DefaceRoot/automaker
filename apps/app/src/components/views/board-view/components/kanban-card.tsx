@@ -1102,7 +1102,23 @@ export const KanbanCard = memo(function KanbanCard({
                   <span className="truncate">Refine</span>
                 </Button>
               )}
-              {onCommit && (
+              {/* Show Verify button if PR was created (changes are committed), otherwise show Commit button */}
+              {feature.prUrl && onManualVerify ? (
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="flex-1 h-7 text-[11px]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManualVerify();
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  data-testid={`verify-${feature.id}`}
+                >
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Verify
+                </Button>
+              ) : onCommit ? (
                 <Button
                   variant="default"
                   size="sm"
@@ -1117,7 +1133,7 @@ export const KanbanCard = memo(function KanbanCard({
                   <GitCommit className="w-3 h-3 mr-1" />
                   Commit
                 </Button>
-              )}
+              ) : null}
             </>
           )}
           {!isCurrentAutoTask && feature.status === "backlog" && (
