@@ -6,7 +6,7 @@ export type ModelOption = {
   label: string;
   description: string;
   badge?: string;
-  provider: 'claude';
+  provider: 'claude' | 'zai';
 };
 
 export const CLAUDE_MODELS: ModelOption[] = [
@@ -23,6 +23,13 @@ export const CLAUDE_MODELS: ModelOption[] = [
     description: 'Balanced performance with strong reasoning.',
     badge: 'Balanced',
     provider: 'claude',
+  },
+  {
+    id: 'glm-4.7',
+    label: 'GLM 4.7',
+    description: 'Powerful coding assistant via Z.AI endpoint.',
+    badge: 'Coding',
+    provider: 'zai',
   },
   {
     id: 'opus',

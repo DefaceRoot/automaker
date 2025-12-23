@@ -17,7 +17,7 @@ export const DEFAULT_MODELS = {
 export type ModelAlias = keyof typeof CLAUDE_MODEL_MAP;
 
 /**
- * AgentModel - Alias for ModelAlias for backward compatibility
- * Represents available Claude models: "opus" | "sonnet" | "haiku"
+ * AgentModel - Available AI models
+ * Includes Claude models and GLM models
  */
-export type AgentModel = ModelAlias;
+export type AgentModel = ModelAlias | 'glm-4.7';

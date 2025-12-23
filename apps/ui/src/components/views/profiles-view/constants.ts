@@ -25,6 +25,7 @@ export const ICON_OPTIONS = [
 export const CLAUDE_MODELS: { id: AgentModel; label: string }[] = [
   { id: 'haiku', label: 'Claude Haiku' },
   { id: 'sonnet', label: 'Claude Sonnet' },
+  { id: 'glm-4.7', label: 'GLM 4.7' },
   { id: 'opus', label: 'Claude Opus' },
 ];
 
