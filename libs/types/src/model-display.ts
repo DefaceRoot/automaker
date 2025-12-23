@@ -55,7 +55,7 @@ export const CLAUDE_MODELS: ModelOption[] = [
     provider: 'claude',
   },
   {
-    id: 'glm-4.7',
+    id: 'GLM-4.7',
     label: 'GLM 4.7',
     description: 'Powerful coding assistant via Z.AI endpoint.',
     badge: 'Coding',
@@ -114,7 +114,7 @@ export function getModelDisplayName(model: AgentModel | string): string {
     haiku: 'Claude Haiku',
     sonnet: 'Claude Sonnet',
     opus: 'Claude Opus',
-    'glm-4.7': 'GLM 4.7',
+    'GLM-4.7': 'GLM 4.7',
   };
   return displayNames[model] || model;
 }

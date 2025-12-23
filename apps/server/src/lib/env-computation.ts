@@ -29,10 +29,10 @@ export function needsZaiEndpoint(
   model: string,
   endpointPreset?: 'default' | 'zai' | 'custom'
 ): boolean {
-  const lowerModel = model.toLowerCase();
+  const upperModel = model.toUpperCase();
 
-  // GLM models always use Z.AI
-  if (lowerModel.startsWith('glm-')) {
+  // GLM models always use Z.AI (case-insensitive check)
+  if (upperModel.startsWith('GLM-')) {
     return true;
   }
 

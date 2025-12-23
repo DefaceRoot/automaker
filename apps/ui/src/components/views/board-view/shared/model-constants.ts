@@ -25,11 +25,11 @@ export const CLAUDE_MODELS: ModelOption[] = [
     provider: 'claude',
   },
   {
-    id: 'glm-4.7',
+    id: 'GLM-4.7',
     label: 'GLM 4.7',
     description: 'Fast coding model for implementation.',
     badge: 'Fast',
-    provider: 'claude',
+    provider: 'zai',
   },
   {
     id: 'opus',

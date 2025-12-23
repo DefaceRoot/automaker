@@ -2565,7 +2565,7 @@ export const useAppStore = create<AppState & AppActions>()(
     }),
     {
       name: 'automaker-storage',
-      version: 2, // Increment when making breaking changes to persisted state
+      version: 3, // Increment when making breaking changes to persisted state
       // Custom merge function to properly restore terminal settings on every load
       // The default shallow merge doesn't work because we persist terminalSettings
       // separately from terminalState (to avoid persisting session data like tabs)
@@ -2626,6 +2626,24 @@ export const useAppStore = create<AppState & AppActions>()(
               ...state.keyboardShortcuts,
               terminal: 'T',
             };
+          }
+        }
+
+        // Migration from version 2 to version 3:
+        // - Fix GLM model name from lowercase 'glm-4.7' to uppercase 'GLM-4.7'
+        if (version <= 2) {
+          // Fix enhancementModel
+          if ((state.enhancementModel as string) === 'glm-4.7') {
+            state.enhancementModel = 'GLM-4.7';
+          }
+          // Fix model in AI profiles
+          if (state.aiProfiles) {
+            state.aiProfiles = state.aiProfiles.map((profile) => ({
+              ...profile,
+              model: profile.model === 'glm-4.7' ? 'GLM-4.7' : profile.model,
+              planningModel:
+                profile.planningModel === 'glm-4.7' ? 'GLM-4.7' : profile.planningModel,
+            }));
           }
         }
 

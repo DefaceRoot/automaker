@@ -31,8 +31,8 @@ export function resolveModelString(
     return modelKey;
   }
 
-  // GLM models - pass through unchanged
-  if (modelKey.startsWith('glm-')) {
+  // GLM models - pass through unchanged (case-insensitive check)
+  if (modelKey.toUpperCase().startsWith('GLM-')) {
     console.log(`[ModelResolver] Using GLM model: ${modelKey}`);
     return modelKey;
   }

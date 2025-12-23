@@ -169,13 +169,25 @@ export function useApiKeyManagement() {
     }
   };
 
-  // Save API keys
-  const handleSave = () => {
-    setApiKeys({
+  // Save API keys - syncs to both local store and server credentials file
+  const handleSave = async () => {
+    const newKeys = {
       anthropic: anthropicKey,
       google: googleKey,
       zai: zaiKey,
-    });
+    };
+
+    // Update local store
+    setApiKeys(newKeys);
+
+    // Sync to server credentials file
+    try {
+      const api = getElectronAPI();
+      await api.settings?.updateCredentials?.({ apiKeys: newKeys });
+    } catch (error) {
+      console.error('[ApiKeyManagement] Failed to sync credentials to server:', error);
+    }
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };

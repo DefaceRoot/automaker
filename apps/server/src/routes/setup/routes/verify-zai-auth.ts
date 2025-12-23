@@ -108,7 +108,7 @@ export function createVerifyZaiAuthHandler() {
         const stream = query({
           prompt: "Reply with only the word 'ok'",
           options: {
-            model: 'glm-4.7',
+            model: 'GLM-4.7',
             maxTurns: 1,
             allowedTools: [],
             abortController,

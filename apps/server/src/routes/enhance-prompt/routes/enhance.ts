@@ -16,6 +16,12 @@ import {
   isValidEnhancementMode,
   type EnhancementMode,
 } from '../../../lib/enhancement-prompts.js';
+import type { SettingsService } from '../../../services/settings-service.js';
+import {
+  computeZaiEnv,
+  needsZaiEndpoint,
+  getZaiCredentialsError,
+} from '../../../lib/env-computation.js';
 
 const logger = createLogger('EnhancePrompt');
 
@@ -83,9 +89,12 @@ async function extractTextFromStream(
 /**
  * Create the enhance request handler
  *
+ * @param settingsService - Settings service for accessing credentials
  * @returns Express request handler for text enhancement
  */
-export function createEnhanceHandler(): (req: Request, res: Response) => Promise<void> {
+export function createEnhanceHandler(
+  settingsService: SettingsService
+): (req: Request, res: Response) => Promise<void> {
   return async (req: Request, res: Response): Promise<void> => {
     try {
       const { originalText, enhancementMode, model } = req.body as EnhanceRequestBody;
@@ -138,10 +147,34 @@ export function createEnhanceHandler(): (req: Request, res: Response) => Promise
       // Resolve the model - use the passed model, default to sonnet for quality
       const resolvedModel = resolveModelString(model, CLAUDE_MODEL_MAP.sonnet);
 
-      logger.debug(`Using model: ${resolvedModel}`);
+      logger.info(`Resolving model: input="${model}" -> resolved="${resolvedModel}"`);
+
+      // Check if model needs Z.AI endpoint and compute env vars
+      let envConfig: Record<string, string> | null = null;
+      if (needsZaiEndpoint(resolvedModel)) {
+        logger.info(`Model ${resolvedModel} needs Z.AI endpoint, fetching credentials...`);
+        const credentials = await settingsService.getCredentials();
+        envConfig = computeZaiEnv(credentials);
+
+        // Hard-fail if GLM model but missing Z.AI credentials
+        if (envConfig === null) {
+          logger.error('Z.AI credentials missing for GLM model');
+          const response: EnhanceErrorResponse = {
+            success: false,
+            error: getZaiCredentialsError(),
+          };
+          res.status(400).json(response);
+          return;
+        }
+
+        logger.info(
+          `Injecting Z.AI env: ${JSON.stringify({ ANTHROPIC_BASE_URL: envConfig.ANTHROPIC_BASE_URL, hasToken: !!envConfig.ANTHROPIC_AUTH_TOKEN })}`
+        );
+      }
 
       // Call Claude SDK with minimal configuration for text transformation
       // Key: no tools, just text completion
+      logger.info(`Calling Claude SDK with model="${resolvedModel}", hasEnvConfig=${!!envConfig}`);
       const stream = query({
         prompt: userPrompt,
         options: {
@@ -150,11 +183,14 @@ export function createEnhanceHandler(): (req: Request, res: Response) => Promise
           maxTurns: 1,
           allowedTools: [],
           permissionMode: 'acceptEdits',
+          ...(envConfig ? { env: envConfig } : {}),
         },
       });
 
       // Extract the enhanced text from the response
+      logger.info('Extracting text from SDK stream...');
       const enhancedText = await extractTextFromStream(stream);
+      logger.info(`Extraction complete, length: ${enhancedText.length}`);
 
       if (!enhancedText || enhancedText.trim().length === 0) {
         logger.warn('Received empty response from Claude');

@@ -20,4 +20,4 @@ export type ModelAlias = keyof typeof CLAUDE_MODEL_MAP;
  * AgentModel - Available AI models
  * Includes Claude models and GLM models
  */
-export type AgentModel = ModelAlias | 'glm-4.7';
+export type AgentModel = ModelAlias | 'GLM-4.7';

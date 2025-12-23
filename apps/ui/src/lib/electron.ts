@@ -554,6 +554,20 @@ export interface ElectronAPI {
       error?: string;
     }>;
   };
+  settings?: {
+    updateCredentials: (updates: {
+      apiKeys?: { anthropic?: string; google?: string; openai?: string; zai?: string };
+    }) => Promise<{
+      success: boolean;
+      credentials?: {
+        anthropic: { configured: boolean; masked: string };
+        google: { configured: boolean; masked: string };
+        openai: { configured: boolean; masked: string };
+        zai: { configured: boolean; masked: string };
+      };
+      error?: string;
+    }>;
+  };
 }
 
 // Note: Window interface is declared in @/types/electron.d.ts

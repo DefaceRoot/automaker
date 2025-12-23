@@ -2096,6 +2096,9 @@ After generating the revised spec, output:
                         cwd: workDir,
                         allowedTools: allowedTools,
                         abortController,
+                        ...(providerConfigEnv
+                          ? { providerConfig: { env: providerConfigEnv } }
+                          : {}),
                       });
 
                       let revisionText = '';
@@ -2233,6 +2236,7 @@ After generating the revised spec, output:
                     cwd: workDir,
                     allowedTools: allowedTools,
                     abortController,
+                    ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
                   });
 
                   let taskOutput = '';
@@ -2322,6 +2326,7 @@ Implement all the changes described in the plan above.`;
                   cwd: workDir,
                   allowedTools: allowedTools,
                   abortController,
+                  ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
                 });
 
                 for await (const msg of continuationStream) {

@@ -168,9 +168,9 @@ export class ClaudeProvider extends BaseProvider {
         tier: 'basic' as const,
       },
       {
-        id: 'glm-4.7',
+        id: 'GLM-4.7',
         name: 'GLM 4.7',
-        modelString: 'glm-4.7',
+        modelString: 'GLM-4.7',
         provider: 'zai',
         description: 'GLM Coding Plan model via Z.AI endpoint',
         contextWindow: 200000,
