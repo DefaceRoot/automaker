@@ -1,7 +1,7 @@
 /**
  * Claude Provider - Executes queries using Claude Agent SDK
  *
- * Wraps the @anthropic-ai/claude-agent-sdk for seamless integration
+ * Wraps @anthropic-ai/claude-agent-sdk for seamless integration
  * with the provider architecture.
  */
 
@@ -33,6 +33,7 @@ export class ClaudeProvider extends BaseProvider {
       abortController,
       conversationHistory,
       sdkSessionId,
+      providerConfig,
     } = options;
 
     // Build Claude SDK options
@@ -55,6 +56,8 @@ export class ClaudeProvider extends BaseProvider {
       ...(sdkSessionId && conversationHistory && conversationHistory.length > 0
         ? { resume: sdkSessionId }
         : {}),
+      // Inject environment variables if provided via providerConfig
+      ...(providerConfig?.env ? { env: providerConfig.env } : {}),
     };
 
     // Build prompt payload
@@ -163,6 +166,18 @@ export class ClaudeProvider extends BaseProvider {
         supportsVision: true,
         supportsTools: true,
         tier: 'basic' as const,
+      },
+      {
+        id: 'glm-4.7',
+        name: 'GLM 4.7',
+        modelString: 'glm-4.7',
+        provider: 'zai',
+        description: 'GLM Coding Plan model via Z.AI endpoint',
+        contextWindow: 200000,
+        maxOutputTokens: 16000,
+        supportsVision: true,
+        supportsTools: true,
+        tier: 'premium' as const,
       },
     ] satisfies ModelDefinition[];
     return models;

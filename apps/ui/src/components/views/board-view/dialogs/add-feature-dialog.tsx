@@ -67,22 +67,15 @@ interface AddFeatureDialogProps {
     textFilePaths: DescriptionTextFilePath[];
     skipTests: boolean;
     model: AgentModel;
+    planningModel?: AgentModel;
     thinkingLevel: ThinkingLevel;
     branchName: string; // Can be empty string to use current branch
     priority: number;
     planningMode: PlanningMode;
     requirePlanApproval: boolean;
+    implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+    implementationEndpointUrl?: string;
   }) => void;
-  categorySuggestions: string[];
-  branchSuggestions: string[];
-  branchCardCounts?: Record<string, number>; // Map of branch name to unarchived card count
-  defaultSkipTests: boolean;
-  defaultBranch?: string;
-  currentBranch?: string;
-  isMaximized: boolean;
-  showProfilesOnly: boolean;
-  aiProfiles: AIProfile[];
-}
 
 export function AddFeatureDialog({
   open,
@@ -200,11 +193,14 @@ export function AddFeatureDialog({
       textFilePaths: newFeature.textFilePaths,
       skipTests: newFeature.skipTests,
       model: selectedModel,
+      planningModel: newFeature.planningModel,
       thinkingLevel: normalizedThinking,
       branchName: finalBranchName,
       priority: newFeature.priority,
       planningMode,
       requirePlanApproval,
+      implementationEndpointPreset: newFeature.implementationEndpointPreset,
+      implementationEndpointUrl: newFeature.implementationEndpointUrl,
     });
 
     // Reset form
@@ -217,9 +213,11 @@ export function AddFeatureDialog({
       textFilePaths: [],
       skipTests: defaultSkipTests,
       model: 'opus',
+      planningModel: 'opus',
       priority: 2,
       thinkingLevel: 'none',
       branchName: '',
+      implementationEndpointPreset: undefined,
     });
     setUseCurrentBranch(true);
     setPlanningMode(defaultPlanningMode);
@@ -271,6 +269,8 @@ export function AddFeatureDialog({
       ...newFeature,
       model,
       thinkingLevel: modelSupportsThinking(model) ? newFeature.thinkingLevel : 'none',
+      // Auto-default to Z.AI endpoint for GLM-4.7
+      implementationEndpointPreset: model === 'glm-4.7' ? 'zai' : 'default',
     });
   };
 

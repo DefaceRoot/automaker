@@ -14,6 +14,7 @@ import {
   loadContextFiles,
 } from '@automaker/utils';
 import { ProviderFactory } from '../providers/provider-factory.js';
+import { computeModelEnv, getZaiCredentialsError, needsZaiEndpoint } from '../lib/env-computation.js';
 import { createChatOptions, validateWorkingDirectory } from '../lib/sdk-options.js';
 import { PathNotAllowedError } from '@automaker/platform';
 
@@ -57,11 +58,13 @@ export class AgentService {
   private stateDir: string;
   private metadataFile: string;
   private events: EventEmitter;
+  private settingsService?: import('./settings-service.js').SettingsService;
 
-  constructor(dataDir: string, events: EventEmitter) {
+  constructor(dataDir: string, events: EventEmitter, settingsService?: import('./settings-service.js').SettingsService) {
     this.stateDir = path.join(dataDir, 'agent-sessions');
     this.metadataFile = path.join(dataDir, 'sessions-metadata.json');
     this.events = events;
+    this.settingsService = settingsService;
   }
 
   async initialize(): Promise<void> {
@@ -219,6 +222,25 @@ export class AgentService {
         `[AgentService] Using provider "${provider.getName()}" for model "${effectiveModel}"`
       );
 
+      // Compute environment variables for Z.AI endpoint if needed
+      let providerConfigEnv: Record<string, string> | null = null;
+      if (this.settingsService && needsZaiEndpoint(effectiveModel)) {
+        try {
+          const credentials = await this.settingsService.getCredentials();
+          providerConfigEnv = computeModelEnv(effectiveModel, { 
+            implementationEndpointPreset: 'default', 
+            implementationEndpointUrl: undefined 
+          }, credentials);
+        } catch (error) {
+          console.error('[AgentService] Failed to load credentials:', error);
+        }
+      }
+
+      // Hard-fail if model needs Z.AI but credentials are missing
+      if (providerConfigEnv === null && effectiveModel.startsWith('glm-')) {
+        throw new Error(getZaiCredentialsError());
+      }
+
       // Build options for provider
       const options: ExecuteOptions = {
         prompt: '', // Will be set below based on images
@@ -230,6 +252,7 @@ export class AgentService {
         abortController: session.abortController!,
         conversationHistory: conversationHistory.length > 0 ? conversationHistory : undefined,
         sdkSessionId: session.sdkSessionId, // Pass SDK session ID for resuming
+        ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
       };
 
       // Build prompt content with images

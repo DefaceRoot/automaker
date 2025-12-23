@@ -9,8 +9,7 @@
  * - Verification and merge workflows
  */
 
-import { ProviderFactory } from '../providers/provider-factory.js';
-import type { ExecuteOptions, Feature } from '@automaker/types';
+import type { ExecuteOptions, Feature, Credentials } from '@automaker/types';
 import {
   buildPromptWithImages,
   isAbortError,
@@ -26,6 +25,7 @@ import path from 'path';
 import * as secureFs from '../lib/secure-fs.js';
 import type { EventEmitter } from '../lib/events.js';
 import { createAutoModeOptions, validateWorkingDirectory } from '../lib/sdk-options.js';
+import { computeModelEnv, getZaiCredentialsError } from '../lib/env-computation.js';
 import { FeatureLoader } from './feature-loader.js';
 
 const execAsync = promisify(exec);
@@ -341,9 +341,11 @@ export class AutoModeService {
   private autoLoopAbortController: AbortController | null = null;
   private config: AutoModeConfig | null = null;
   private pendingApprovals = new Map<string, PendingApproval>();
+  private settingsService?: import('./settings-service.js').SettingsService;
 
-  constructor(events: EventEmitter) {
+  constructor(events: EventEmitter, settingsService?: import('./settings-service.js').SettingsService) {
     this.events = events;
+    this.settingsService = settingsService;
   }
 
   /**
@@ -585,11 +587,17 @@ export class AutoModeService {
         typeof img === 'string' ? img : img.path
       );
 
-      // Get model from feature
-      const model = resolveModelString(feature.model, DEFAULT_MODELS.claude);
-      console.log(`[AutoMode] Executing feature ${featureId} with model: ${model} in ${workDir}`);
+      // Determine planning and implementation models
+      const planningModelStr = feature.planningModel || feature.model;
+      const planningModel = resolveModelString(planningModelStr, DEFAULT_MODELS.claude);
+      const implementationModel = resolveModelString(feature.model, DEFAULT_MODELS.claude);
+      
+      console.log(`[AutoMode] Executing feature ${featureId} in ${workDir}`);
+      console.log(`[AutoMode] Planning model: ${planningModel}`);
+      console.log(`[AutoMode] Implementation model: ${implementationModel}`);
 
-      // Run the agent with the feature's model and images
+      // Two-phase execution: planning model generates plan, implementation model executes
+      // For now, use the same single-phase flow but with proper model selection
       // Context files are passed as system prompt for higher priority
       await this.runAgent(
         workDir,
@@ -598,12 +606,15 @@ export class AutoModeService {
         abortController,
         projectPath,
         imagePaths,
-        model,
+        implementationModel,
+        planningModel,
         {
           projectPath,
           planningMode: feature.planningMode,
           requirePlanApproval: feature.requirePlanApproval,
           systemPrompt: contextFilesPrompt || undefined,
+          implementationEndpointPreset: feature.implementationEndpointPreset,
+          implementationEndpointUrl: feature.implementationEndpointUrl,
         }
       );
 
@@ -1702,12 +1713,15 @@ This helps parse your summary correctly in the output logs.`;
     projectPath: string,
     imagePaths?: string[],
     model?: string,
+    planningModel?: string,
     options?: {
       projectPath?: string;
       planningMode?: PlanningMode;
       requirePlanApproval?: boolean;
       previousContent?: string;
       systemPrompt?: string;
+      implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+      implementationEndpointUrl?: string;
     }
   ): Promise<void> {
     const finalProjectPath = options?.projectPath || projectPath;
@@ -1780,7 +1794,40 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       return;
     }
 
-    // Build SDK options using centralized configuration for feature implementation
+    // Get credentials for environment injection
+    let credentials: Credentials | null = null;
+    if (this.settingsService) {
+      try {
+        credentials = await this.settingsService.getCredentials();
+      } catch (error) {
+        console.error('[AutoMode] Failed to load credentials:', error);
+      }
+    }
+
+    // Compute environment variables for Z.AI endpoint if needed
+    const providerConfigEnv = credentials
+      ? computeModelEnv(finalModel, { 
+          implementationEndpointPreset: options?.implementationEndpointPreset, 
+          implementationEndpointUrl: options?.implementationEndpointUrl 
+        }, credentials)
+      : null;
+
+    // Hard-fail if model needs Z.AI but credentials are missing
+    if (providerConfigEnv === null && (finalModel.startsWith('glm-'))) {
+      throw new Error(getZaiCredentialsError());
+    }
+
+    // Execute via provider with environment injection
+    const executeOptions: ExecuteOptions = {
+      prompt: promptContent,
+      model: finalModel,
+      maxTurns: maxTurns,
+      cwd: workDir,
+      allowedTools: allowedTools,
+      abortController,
+      systemPrompt: options?.systemPrompt,
+      ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
+    };
     const sdkOptions = createAutoModeOptions({
       cwd: workDir,
       model: model,

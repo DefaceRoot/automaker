@@ -66,24 +66,18 @@ interface EditFeatureDialogProps {
       description: string;
       skipTests: boolean;
       model: AgentModel;
+      planningModel?: AgentModel;
       thinkingLevel: ThinkingLevel;
       imagePaths: DescriptionImagePath[];
       textFilePaths: DescriptionTextFilePath[];
       branchName: string; // Can be empty string to use current branch
       priority: number;
-      planningMode: PlanningMode;
-      requirePlanApproval: boolean;
+      planningMode?: PlanningMode;
+      requirePlanApproval?: boolean;
+      implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+      implementationEndpointUrl?: string;
     }
   ) => void;
-  categorySuggestions: string[];
-  branchSuggestions: string[];
-  branchCardCounts?: Record<string, number>; // Map of branch name to unarchived card count
-  currentBranch?: string;
-  isMaximized: boolean;
-  showProfilesOnly: boolean;
-  aiProfiles: AIProfile[];
-  allFeatures: Feature[];
-}
 
 export function EditFeatureDialog({
   feature,
@@ -166,6 +160,7 @@ export function EditFeatureDialog({
       description: editingFeature.description,
       skipTests: editingFeature.skipTests ?? false,
       model: selectedModel,
+      planningModel: editingFeature.planningModel,
       thinkingLevel: normalizedThinking,
       imagePaths: editingFeature.imagePaths ?? [],
       textFilePaths: editingFeature.textFilePaths ?? [],
@@ -173,6 +168,8 @@ export function EditFeatureDialog({
       priority: editingFeature.priority ?? 2,
       planningMode,
       requirePlanApproval,
+      implementationEndpointPreset: editingFeature.implementationEndpointPreset,
+      implementationEndpointUrl: editingFeature.implementationEndpointUrl,
     };
 
     onUpdate(editingFeature.id, updates);
@@ -193,6 +190,8 @@ export function EditFeatureDialog({
       ...editingFeature,
       model,
       thinkingLevel: modelSupportsThinking(model) ? editingFeature.thinkingLevel : 'none',
+      // Auto-default to Z.AI endpoint for GLM-4.7
+      implementationEndpointPreset: model === 'glm-4.7' ? 'zai' : editingFeature.implementationEndpointPreset,
     });
   };
 

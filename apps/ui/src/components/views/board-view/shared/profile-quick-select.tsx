@@ -75,6 +75,7 @@ export function ProfileQuickSelect({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{profile.name}</p>
                 <p className="text-[10px] text-muted-foreground truncate">
+                  {profile.planningModel ? `${profile.planningModel} → ` : ''}
                   {profile.model}
                   {profile.thinkingLevel !== 'none' && ` + ${profile.thinkingLevel}`}
                 </p>
@@ -106,6 +107,7 @@ export function ProfileQuickSelect({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{profile.name}</p>
                 <p className="text-[10px] text-muted-foreground truncate">
+                  {profile.planningModel ? `${profile.planningModel} → ` : ''}
                   {profile.model}
                   {profile.thinkingLevel !== 'none' && ` + ${profile.thinkingLevel}`}
                 </p>

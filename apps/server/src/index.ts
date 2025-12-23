@@ -111,9 +111,9 @@ app.use(express.json({ limit: '50mb' }));
 const events: EventEmitter = createEventEmitter();
 
 // Create services
-const agentService = new AgentService(DATA_DIR, events);
+const agentService = new AgentService(DATA_DIR, events, settingsService);
 const featureLoader = new FeatureLoader();
-const autoModeService = new AutoModeService(events);
+const autoModeService = new AutoModeService(events, settingsService);
 const settingsService = new SettingsService(DATA_DIR);
 const claudeUsageService = new ClaudeUsageService();
 

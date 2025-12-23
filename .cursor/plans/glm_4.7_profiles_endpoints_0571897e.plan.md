@@ -23,7 +23,7 @@ todos:
       - profiles-plan-vs-code
   - id: server-env-injection
     content: Implement per-run env injection for Z.AI in ClaudeProvider and wire into AutoModeService + AgentService; refactor AutoMode to two-phase plan/implement execution.
-    status: pending
+    status: in_progress
     dependencies:
       - feature-schema-propagation
   - id: verify-zai-auth

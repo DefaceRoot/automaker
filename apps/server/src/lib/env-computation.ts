@@ -9,10 +9,13 @@
 import type { Credentials } from '@automaker/types';
 import type { Feature } from '@automaker/types';
 
-// Fix TypeScript by defining the Feature type locally with proper typing
-interface FeatureWithEndpointConfig {
-  implementationEndpointPreset?: 'default' | 'zai' | 'custom';
-  implementationEndpointUrl?: string;
+/**
+ * Environment variables to inject for Z.AI endpoint
+ */
+export interface ZAiEnvConfig {
+  ANTHROPIC_BASE_URL: string;
+  ANTHROPIC_AUTH_TOKEN: string;
+  API_TIMEOUT_MS: string;
 }
 
 /**
@@ -55,7 +58,7 @@ export function needsZaiEndpoint(
  */
 export function computeZaiEnv(
   credentials: Pick<Credentials, 'apiKeys'>,
-  customUrl?: string | undefined
+  customUrl?: string
 ): Record<string, string> | null {
   const { zai } = credentials.apiKeys;
 
@@ -88,7 +91,7 @@ export function computeZaiEnv(
  */
 export function computeModelEnv(
   model: string,
-  feature: FeatureWithEndpointConfig,
+  feature: Pick<Feature, 'implementationEndpointPreset' | 'implementationEndpointUrl'>,
   credentials: Pick<Credentials, 'apiKeys'>
 ): Record<string, string> | null {
   const { implementationEndpointPreset, implementationEndpointUrl } = feature;
@@ -117,4 +120,3 @@ export function getZaiCredentialsError(): string {
     'Please add your Z.AI API key in Settings → API Keys.'
   );
 }
-

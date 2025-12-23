@@ -93,11 +93,14 @@ export function useBoardActions({
       imagePaths: DescriptionImagePath[];
       skipTests: boolean;
       model: AgentModel;
+      planningModel?: AgentModel;
       thinkingLevel: ThinkingLevel;
       branchName: string;
       priority: number;
       planningMode: PlanningMode;
       requirePlanApproval: boolean;
+      implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+      implementationEndpointUrl?: string;
     }) => {
       // Empty string means "unassigned" (show only on primary worktree) - convert to undefined
       // Non-empty string is the actual branch name (for non-primary worktrees)
@@ -209,12 +212,16 @@ export function useBoardActions({
         description: string;
         skipTests: boolean;
         model: AgentModel;
+        planningModel?: AgentModel;
         thinkingLevel: ThinkingLevel;
         imagePaths: DescriptionImagePath[];
+        textFilePaths: DescriptionTextFilePath[];
         branchName: string;
         priority: number;
         planningMode?: PlanningMode;
         requirePlanApproval?: boolean;
+        implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+        implementationEndpointUrl?: string;
       }
     ) => {
       const finalBranchName = updates.branchName || undefined;
