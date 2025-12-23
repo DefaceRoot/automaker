@@ -1814,12 +1814,33 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
     }
 
     // Resolve model and prepare execution parameters
+    // finalModel = implementation model (used for task execution)
+    // finalPlanningModel = planning model (used for spec generation)
     const finalModel = model || resolveModelString(model, DEFAULT_MODELS.claude);
+    const finalPlanningModel = planningModel || finalModel;
     const maxTurns = 100; // Default max turns for agent execution
     const allowedTools: string[] | undefined = ['Read', 'Glob', 'Grep']; // Default tools for auto mode
 
+    // Determine which model to use for the initial stream
+    // Use planning model for spec/full modes, implementation model for skip/lite
+    const initialModel =
+      planningMode === 'spec' || planningMode === 'full' ? finalPlanningModel : finalModel;
+
     // Compute environment variables for Z.AI endpoint if needed
+    // We need env for the initial model (could be planning or implementation)
     const providerConfigEnv = credentials
+      ? computeModelEnv(
+          initialModel,
+          {
+            implementationEndpointPreset: options?.implementationEndpointPreset,
+            implementationEndpointUrl: options?.implementationEndpointUrl,
+          },
+          credentials
+        )
+      : null;
+
+    // Also compute env for implementation model (used for task execution)
+    const implementationEnv = credentials
       ? computeModelEnv(
           finalModel,
           {
@@ -1831,7 +1852,10 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       : null;
 
     // Hard-fail if model needs Z.AI but credentials are missing
-    if (providerConfigEnv === null && finalModel.startsWith('glm-')) {
+    if (providerConfigEnv === null && initialModel.startsWith('glm-')) {
+      throw new Error(getZaiCredentialsError());
+    }
+    if (implementationEnv === null && finalModel.startsWith('glm-')) {
       throw new Error(getZaiCredentialsError());
     }
 
@@ -1851,9 +1875,10 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
     }
 
     // Execute via provider with environment injection
+    // Initial stream uses planning model for spec/full modes, implementation model otherwise
     const executeOptions: ExecuteOptions = {
       prompt: promptContent,
-      model: finalModel,
+      model: initialModel,
       maxTurns: maxTurns,
       cwd: workDir,
       allowedTools: allowedTools,
@@ -1863,13 +1888,16 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
     };
 
     console.log(
-      `[AutoMode] runAgent called for feature ${featureId} with model: ${finalModel}, planningMode: ${planningMode}, requiresApproval: ${requiresApproval}`
+      `[AutoMode] runAgent called for feature ${featureId} with planningModel: ${finalPlanningModel}, implementationModel: ${finalModel}, planningMode: ${planningMode}, requiresApproval: ${requiresApproval}`
+    );
+    console.log(
+      `[AutoMode] Using ${initialModel} for initial ${planningMode === 'spec' || planningMode === 'full' ? 'spec generation' : 'execution'}`
     );
 
-    // Get provider for this model
-    const provider = ProviderFactory.getProviderForModel(finalModel);
+    // Get provider for the initial model
+    const provider = ProviderFactory.getProviderForModel(initialModel);
 
-    console.log(`[AutoMode] Using provider "${provider.getName()}" for model "${finalModel}"`);
+    console.log(`[AutoMode] Using provider "${provider.getName()}" for model "${initialModel}"`);
 
     // Execute via provider
     const stream = provider.executeQuery(executeOptions);
@@ -2088,10 +2116,10 @@ After generating the revised spec, output:
                         version: planVersion,
                       });
 
-                      // Make revision call
+                      // Make revision call (still planning phase - use planning model)
                       const revisionStream = provider.executeQuery({
                         prompt: revisionPrompt,
-                        model: finalModel,
+                        model: finalPlanningModel,
                         maxTurns: maxTurns || 100,
                         cwd: workDir,
                         allowedTools: allowedTools,
@@ -2194,6 +2222,12 @@ After generating the revised spec, output:
                   `[AutoMode] Starting multi-agent execution: ${parsedTasks.length} tasks for feature ${featureId}`
                 );
 
+                // Get implementation provider (may differ from planning provider)
+                const implementationProvider = ProviderFactory.getProviderForModel(finalModel);
+                console.log(
+                  `[AutoMode] Using implementation model ${finalModel} with provider "${implementationProvider.getName()}"`
+                );
+
                 // Execute each task with a separate agent
                 for (let taskIndex = 0; taskIndex < parsedTasks.length; taskIndex++) {
                   const task = parsedTasks[taskIndex];
@@ -2228,15 +2262,15 @@ After generating the revised spec, output:
                     userFeedback
                   );
 
-                  // Execute task with dedicated agent
-                  const taskStream = provider.executeQuery({
+                  // Execute task with dedicated agent (implementation phase - use implementation model/env)
+                  const taskStream = implementationProvider.executeQuery({
                     prompt: taskPrompt,
                     model: finalModel,
                     maxTurns: Math.min(maxTurns || 100, 50), // Limit turns per task
                     cwd: workDir,
                     allowedTools: allowedTools,
                     abortController,
-                    ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
+                    ...(implementationEnv ? { providerConfig: { env: implementationEnv } } : {}),
                   });
 
                   let taskOutput = '';
@@ -2309,6 +2343,12 @@ After generating the revised spec, output:
                   `[AutoMode] No parsed tasks, using single-agent execution for feature ${featureId}`
                 );
 
+                // Get implementation provider (may differ from planning provider)
+                const implementationProvider = ProviderFactory.getProviderForModel(finalModel);
+                console.log(
+                  `[AutoMode] Using implementation model ${finalModel} with provider "${implementationProvider.getName()}"`
+                );
+
                 const continuationPrompt = `The plan/specification has been approved. Now implement it.
 ${userFeedback ? `\n## User Feedback\n${userFeedback}\n` : ''}
 ## Approved Plan
@@ -2319,14 +2359,15 @@ ${approvedPlanContent}
 
 Implement all the changes described in the plan above.`;
 
-                const continuationStream = provider.executeQuery({
+                // Use implementation model/env for the continuation (implementation phase)
+                const continuationStream = implementationProvider.executeQuery({
                   prompt: continuationPrompt,
                   model: finalModel,
                   maxTurns: maxTurns,
                   cwd: workDir,
                   allowedTools: allowedTools,
                   abortController,
-                  ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
+                  ...(implementationEnv ? { providerConfig: { env: implementationEnv } } : {}),
                 });
 
                 for await (const msg of continuationStream) {
