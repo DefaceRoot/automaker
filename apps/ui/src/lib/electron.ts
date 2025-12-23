@@ -465,6 +465,11 @@ export interface ElectronAPI {
       authenticated: boolean;
       error?: string;
     }>;
+    verifyZaiAuth: () => Promise<{
+      success: boolean;
+      authenticated: boolean;
+      error?: string;
+    }>;
     getGhStatus?: () => Promise<{
       success: boolean;
       installed: boolean;
@@ -1012,11 +1017,11 @@ interface SetupAPI {
   }>;
   storeApiKey: (provider: string, apiKey: string) => Promise<{ success: boolean; error?: string }>;
   getApiKeys: () => Promise<{
-      success: boolean;
-      hasAnthropicKey: boolean;
-      hasGoogleKey: boolean;
-      hasZaiKey: boolean;
-    }>;
+    success: boolean;
+    hasAnthropicKey: boolean;
+    hasGoogleKey: boolean;
+    hasZaiKey: boolean;
+  }>;
   deleteApiKey: (
     provider: string
   ) => Promise<{ success: boolean; error?: string; message?: string }>;
@@ -1030,6 +1035,11 @@ interface SetupAPI {
     isLinux: boolean;
   }>;
   verifyClaudeAuth: (authMethod?: 'cli' | 'api_key') => Promise<{
+    success: boolean;
+    authenticated: boolean;
+    error?: string;
+  }>;
+  verifyZaiAuth: () => Promise<{
     success: boolean;
     authenticated: boolean;
     error?: string;
@@ -1122,6 +1132,16 @@ function createMockSetupAPI(): SetupAPI {
 
     verifyClaudeAuth: async (authMethod?: 'cli' | 'api_key') => {
       console.log('[Mock] Verifying Claude auth with method:', authMethod);
+      // Mock always returns not authenticated
+      return {
+        success: true,
+        authenticated: false,
+        error: 'Mock environment - authentication not available',
+      };
+    },
+
+    verifyZaiAuth: async () => {
+      console.log('[Mock] Verifying Z.AI auth');
       // Mock always returns not authenticated
       return {
         success: true,

@@ -204,6 +204,25 @@ Automaker supports multiple authentication methods (in order of priority):
 | API Key (env)    | `ANTHROPIC_API_KEY`  | Anthropic API key               |
 | API Key (stored) | —                    | Anthropic API key stored in app |
 
+### GLM-4.7 (Z.AI) Support
+
+Automaker now supports GLM-4.7, a high-performance coding model available through [Z.AI](https://z.ai). GLM-4.7 is ideal for implementation tasks when combined with a planning model like Claude Opus.
+
+**Key Features:**
+
+- **Plan vs. Code**: Use separate models for planning (Claude) and implementation (GLM-4.7)
+- **Cost Effective**: Reduce costs while maintaining high code quality
+- **Seamless Integration**: Works with existing Auto Mode and Agent Chat workflows
+
+**Getting Started:**
+
+1. Get a Z.AI API key from [https://z.ai](https://z.ai)
+2. Add the key in **Settings → API Keys → Z.AI (GLM Coding Plan)**
+3. Create or use the built-in "GLM Coding" profile
+4. Select the profile when running features or chatting
+
+For detailed setup instructions, see the [GLM Setup Guide](./docs/glm-setup-guide.md).
+
 ### Persistent Setup (Optional)
 
 Add to your `~/.bashrc` or `~/.zshrc`:

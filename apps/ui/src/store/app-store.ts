@@ -4,6 +4,7 @@ import type { Project, TrashedProject } from '@/lib/electron';
 import type {
   Feature as BaseFeature,
   FeatureImagePath,
+  FeatureTextFilePath,
   AgentModel,
   PlanningMode,
   AIProfile,
@@ -885,7 +886,7 @@ const DEFAULT_AI_PROFILES: AIProfile[] = [
     icon: 'Zap',
     implementationEndpointPreset: 'default',
   },
-];;
+];
 
 const initialState: AppState = {
   projects: [],

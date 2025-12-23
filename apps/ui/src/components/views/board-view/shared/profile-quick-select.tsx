@@ -55,12 +55,20 @@ export function ProfileQuickSelect({
             selectedModel === profile.model &&
             selectedThinkingLevel === profile.thinkingLevel &&
             (selectedPlanningModel === planningModel || !selectedPlanningModel) &&
-            (selectedImplementationEndpointPreset === profile.implementationEndpointPreset || !selectedImplementationEndpointPreset);
+            (selectedImplementationEndpointPreset === profile.implementationEndpointPreset ||
+              !selectedImplementationEndpointPreset);
           return (
             <button
               key={profile.id}
               type="button"
-              onClick={() => onSelect(profile.model, planningModel, profile.thinkingLevel, profile.implementationEndpointPreset)}
+              onClick={() =>
+                onSelect(
+                  profile.model,
+                  planningModel,
+                  profile.thinkingLevel,
+                  profile.implementationEndpointPreset
+                )
+              }
               className={cn(
                 'flex items-center gap-2 p-2 rounded-lg border text-left transition-all',
                 isSelected
@@ -71,38 +79,6 @@ export function ProfileQuickSelect({
             >
               <div className="w-7 h-7 rounded flex items-center justify-center shrink-0 bg-primary/10">
                 {IconComponent && <IconComponent className="w-4 h-4 text-primary" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">{profile.name}</p>
-                <p className="text-[10px] text-muted-foreground truncate">
-                  {profile.planningModel ? `${profile.planningModel} → ` : ''}
-                  {profile.model}
-                  {profile.thinkingLevel !== 'none' && ` + ${profile.thinkingLevel}`}
-                </p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Or customize below.
-        {showManageLink && onManageLinkClick && (
-          <>
-            {' '}
-            Manage profiles in{' '}
-            <button
-              type="button"
-              onClick={onManageLinkClick}
-              className="text-brand-500 hover:underline"
-            >
-              AI Profiles
-            </button>
-          </>
-        )}
-      </p>
-    </div>
-  );
-}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{profile.name}</p>

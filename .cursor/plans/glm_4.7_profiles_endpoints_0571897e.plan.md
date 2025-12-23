@@ -23,17 +23,17 @@ todos:
       - profiles-plan-vs-code
   - id: server-env-injection
     content: Implement per-run env injection for Z.AI in ClaudeProvider and wire into AutoModeService + AgentService; refactor AutoMode to two-phase plan/implement execution.
-    status: in_progress
+    status: completed
     dependencies:
       - feature-schema-propagation
   - id: verify-zai-auth
     content: Add backend verification endpoint + UI test button for Z.AI key.
-    status: in_progress
+    status: completed
     dependencies:
       - server-env-injection
   - id: tests-and-docs
     content: Update fixtures/tests and add/update docs describing GLM setup and behavior.
-    status: pending
+    status: completed
     dependencies:
       - verify-zai-auth
 ---
@@ -202,14 +202,14 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 - `planningModel = resolveModelString(feature.planningModel ?? feature.model)`
 - `implementationModel = resolveModelString(feature.model)`
 - Implement two-phase execution when `planningMode !== 'skip'`:
-- Phase 1 (planningModel): run a planning-only prompt (new prompts that *stop after* `[PLAN_GENERATED]` / `[SPEC_GENERATED]` and do not proceed).
+- Phase 1 (planningModel): run a planning-only prompt (new prompts that _stop after_ `[PLAN_GENERATED]` / `[SPEC_GENERATED]` and do not proceed).
 - Keep the existing approval loop, but it should only re-run **Phase 1**.
 - Phase 2 (implementationModel): run continuation prompts / task prompts.
-- For each provider call, compute `providerConfig.env` based on the *model being used*:
+- For each provider call, compute `providerConfig.env` based on the _model being used_:
 - If model starts with `glm-` OR endpoint preset is Z.AI/custom:
-    - `ANTHROPIC_BASE_URL = (customUrl ?? "https://api.z.ai/api/anthropic")`
-    - `ANTHROPIC_AUTH_TOKEN = <credentials.apiKeys.zai>`
-    - `API_TIMEOUT_MS = "3000000"`
+  - `ANTHROPIC_BASE_URL = (customUrl ?? "https://api.z.ai/api/anthropic")`
+  - `ANTHROPIC_AUTH_TOKEN = <credentials.apiKeys.zai>`
+  - `API_TIMEOUT_MS = "3000000"`
 - Else: no base url override; let Anthropic API key auth apply.
 - Hard-fail with a clear error if required credentials are missing.
 - Agent chat execution:

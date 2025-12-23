@@ -4,15 +4,27 @@ This guide covers running Automaker in a fully isolated Docker container. For ba
 
 ## Quick Start
 
-1. **Set your API key** (create a `.env` file in the project root):
+1. **Set your API keys** (create a `.env` file in the project root):
 
    ```bash
    # Linux/Mac
-   echo "ANTHROPIC_API_KEY=your-api-key-here" > .env
+   echo "ANTHROPIC_API_KEY=your-anthropic-api-key-here" > .env
 
    # Windows PowerShell
-   Set-Content -Path .env -Value "ANTHROPIC_API_KEY=your-api-key-here" -Encoding UTF8
+   Set-Content -Path .env -Value "ANTHROPIC_API_KEY=your-anthropic-api-key-here" -Encoding UTF8
    ```
+
+   **Optional: Add Z.AI API key for GLM-4.7 support:**
+
+   ```bash
+   # Linux/Mac
+   echo "ZAI_API_KEY=your-zai-api-key-here" >> .env
+
+   # Windows PowerShell
+   Add-Content -Path .env -Value "ZAI_API_KEY=your-zai-api-key-here" -Encoding UTF8
+   ```
+
+   For more information about GLM-4.7, see the [GLM Setup Guide](./glm-setup-guide.md).
 
 2. **Build and run**:
 

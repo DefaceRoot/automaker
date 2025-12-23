@@ -76,6 +76,16 @@ interface AddFeatureDialogProps {
     implementationEndpointPreset?: 'default' | 'zai' | 'custom';
     implementationEndpointUrl?: string;
   }) => void;
+  categorySuggestions?: string[];
+  branchSuggestions?: string[];
+  branchCardCounts?: Record<string, number>;
+  defaultSkipTests?: boolean;
+  defaultBranch?: string;
+  currentBranch?: string;
+  isMaximized?: boolean;
+  showProfilesOnly?: boolean;
+  aiProfiles?: AIProfile[];
+}
 
 export function AddFeatureDialog({
   open,
@@ -143,7 +153,7 @@ export function AddFeatureDialog({
         branchName: defaultBranch || '',
         // Use default profile's model/thinkingLevel if set, else fallback to defaults
         model: defaultProfile?.model ?? 'opus',
-        planningModel: defaultProfile?.planningModel ?? (defaultProfile?.model ?? 'opus'),
+        planningModel: defaultProfile?.planningModel ?? defaultProfile?.model ?? 'opus',
         thinkingLevel: defaultProfile?.thinkingLevel ?? 'none',
         implementationEndpointPreset: defaultProfile?.implementationEndpointPreset ?? 'default',
       }));

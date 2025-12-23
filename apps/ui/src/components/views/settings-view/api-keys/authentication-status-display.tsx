@@ -14,9 +14,8 @@ interface AuthenticationStatusDisplayProps {
     google: string;
     zai: string;
   };
-     zai: string;
-   };
- }
+}
+
 export function AuthenticationStatusDisplay({
   claudeAuthStatus,
   apiKeyStatus,

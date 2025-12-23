@@ -7,7 +7,10 @@ import {
   PlanningMode,
   useAppStore,
 } from '@/store/app-store';
-import { FeatureImagePath as DescriptionImagePath } from '@/components/ui/description-image-dropzone';
+import {
+  FeatureImagePath as DescriptionImagePath,
+  FeatureTextFilePath as DescriptionTextFilePath,
+} from '@/components/ui/description-image-dropzone';
 import { getElectronAPI } from '@/lib/electron';
 import { toast } from 'sonner';
 import { useAutoMode } from '@/hooks/use-auto-mode';

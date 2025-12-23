@@ -27,13 +27,12 @@ import * as secureFs from '../lib/secure-fs.js';
 import type { EventEmitter } from '../lib/events.js';
 import { createAutoModeOptions, validateWorkingDirectory } from '../lib/sdk-options.js';
 import { computeModelEnv, getZaiCredentialsError } from '../lib/env-computation.js';
-import { ProviderFactory } from '../providers/provider-factory.js';
 import { FeatureLoader } from './feature-loader.js';
 
 const execAsync = promisify(exec);
 
-// Planning mode types for spec-driven development
-type PlanningMode = 'skip' | 'lite' | 'spec' | 'full';
+// Extended PlanningMode that includes internal 'lite_with_approval' variant
+type PlanningMode = 'skip' | 'lite' | 'lite_with_approval' | 'spec' | 'full';
 
 interface ParsedTask {
   id: string; // e.g., "T001"
@@ -298,7 +297,8 @@ function parseTaskLine(line: string, currentPhase?: string): ParsedTask | null {
 
 // Feature type is imported from feature-loader.js
 // Extended type with planning fields for local use
-interface FeatureWithPlanning extends Feature {
+// Use Omit to override planningMode with our extended type that includes 'lite_with_approval'
+interface FeatureWithPlanning extends Omit<Feature, 'planningMode'> {
   planningMode?: PlanningMode;
   planSpec?: PlanSpec;
   requirePlanApproval?: boolean;
@@ -345,7 +345,10 @@ export class AutoModeService {
   private pendingApprovals = new Map<string, PendingApproval>();
   private settingsService?: import('./settings-service.js').SettingsService;
 
-  constructor(events: EventEmitter, settingsService?: import('./settings-service.js').SettingsService) {
+  constructor(
+    events: EventEmitter,
+    settingsService?: import('./settings-service.js').SettingsService
+  ) {
     this.events = events;
     this.settingsService = settingsService;
   }
@@ -593,7 +596,7 @@ export class AutoModeService {
       const planningModelStr = feature.planningModel || feature.model;
       const planningModel = resolveModelString(planningModelStr, DEFAULT_MODELS.claude);
       const implementationModel = resolveModelString(feature.model, DEFAULT_MODELS.claude);
-      
+
       console.log(`[AutoMode] Executing feature ${featureId} in ${workDir}`);
       console.log(`[AutoMode] Planning model: ${planningModel}`);
       console.log(`[AutoMode] Implementation model: ${implementationModel}`);
@@ -889,12 +892,6 @@ Address the follow-up instructions above. Review the previous work and make the 
         model, // 6th param: model
         undefined, // 7th param: planningModel - not used for follow-ups
         {
-          projectPath,
-          planningMode: 'skip', // Follow-ups don't require approval
-          previousContent: previousContext || undefined,
-          systemPrompt: contextFilesPrompt || undefined,
-        }
-      );
           projectPath,
           planningMode: 'skip', // Follow-ups don't require approval
           previousContent: previousContext || undefined,
@@ -1488,11 +1485,14 @@ Format your response as a structured markdown document.`;
         };
       }
 
+      // Capture the existing content before applying updates
+      const oldContent = feature.planSpec?.content;
+
       // Apply updates
       Object.assign(feature.planSpec, updates);
 
       // If content is being updated and it's a new version, increment version
-      if (updates.content && updates.content !== feature.planSpec.content) {
+      if (updates.content && updates.content !== oldContent) {
         feature.planSpec.version = (feature.planSpec.version || 0) + 1;
       }
 
@@ -1818,21 +1818,20 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
     const maxTurns = 100; // Default max turns for agent execution
     const allowedTools: string[] | undefined = ['Read', 'Glob', 'Grep']; // Default tools for auto mode
 
-    // Resolve model and prepare execution parameters
-    const finalModel = model || resolveModelString(model, DEFAULT_MODELS.claude);
-    const maxTurns = 100; // Default max turns for agent execution
-    const allowedTools: string[] | undefined = ['Read', 'Glob', 'Grep']; // Default tools for auto mode
-
     // Compute environment variables for Z.AI endpoint if needed
     const providerConfigEnv = credentials
-      ? computeModelEnv(finalModel, { 
-          implementationEndpointPreset: options?.implementationEndpointPreset, 
-          implementationEndpointUrl: options?.implementationEndpointUrl 
-        }, credentials)
+      ? computeModelEnv(
+          finalModel,
+          {
+            implementationEndpointPreset: options?.implementationEndpointPreset,
+            implementationEndpointUrl: options?.implementationEndpointUrl,
+          },
+          credentials
+        )
       : null;
 
     // Hard-fail if model needs Z.AI but credentials are missing
-    if (providerConfigEnv === null && (finalModel.startsWith('glm-'))) {
+    if (providerConfigEnv === null && finalModel.startsWith('glm-')) {
       throw new Error(getZaiCredentialsError());
     }
 

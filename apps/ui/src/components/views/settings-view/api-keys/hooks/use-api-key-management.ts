@@ -56,7 +56,7 @@ export function useApiKeyManagement() {
   useEffect(() => {
     const checkApiKeyStatus = async () => {
       const api = getElectronAPI();
-      if (api?.setup?.getApiKeys) {
+      if (api.setup?.getApiKeys) {
         try {
           const status = await api.setup.getApiKeys();
           if (status.success) {
@@ -81,9 +81,9 @@ export function useApiKeyManagement() {
 
     try {
       const api = getElectronAPI();
-      const data = await api.setup.verifyClaudeAuth('api_key');
+      const data = await api.setup?.verifyClaudeAuth('api_key');
 
-      if (data.success && data.authenticated) {
+      if (data && data.success && data.authenticated) {
         setTestResult({
           success: true,
           message: 'Connection successful! Claude responded.',
@@ -91,7 +91,7 @@ export function useApiKeyManagement() {
       } else {
         setTestResult({
           success: false,
-          message: data.error || 'Failed to connect to Claude API.',
+          message: data?.error || 'Failed to connect to Claude API.',
         });
       }
     } catch {
@@ -129,27 +129,33 @@ export function useApiKeyManagement() {
   };
 
   // Test Z.AI connection
-  // TODO: Add backend endpoint for Z.AI API key verification
   const handleTestZaiConnection = async () => {
     setTestingZaiConnection(true);
     setZaiTestResult(null);
 
-    // Basic validation - check key format
-    if (!zaiKey || zaiKey.trim().length < 10) {
+    try {
+      const api = getElectronAPI();
+      const data = await api.setup?.verifyZaiAuth?.();
+
+      if (data && data.success && data.authenticated) {
+        setZaiTestResult({
+          success: true,
+          message: 'Connection successful! Z.AI/GLM-4.7 responded.',
+        });
+      } else {
+        setZaiTestResult({
+          success: false,
+          message: data?.error || 'Failed to connect to Z.AI API.',
+        });
+      }
+    } catch {
       setZaiTestResult({
         success: false,
-        message: 'Please enter a valid API key.',
+        message: 'Network error. Please check your connection.',
       });
+    } finally {
       setTestingZaiConnection(false);
-      return;
     }
-
-    // For now, just validate that a key is provided (full verification requires backend endpoint)
-    setZaiTestResult({
-      success: true,
-      message: 'API key saved. Connection test not yet available.',
-    });
-    setTestingZaiConnection(false);
   };
 
   // Save API keys

@@ -78,6 +78,15 @@ interface EditFeatureDialogProps {
       implementationEndpointUrl?: string;
     }
   ) => void;
+  categorySuggestions?: string[];
+  branchSuggestions?: string[];
+  branchCardCounts?: Record<string, number>;
+  currentBranch?: string;
+  isMaximized?: boolean;
+  showProfilesOnly?: boolean;
+  aiProfiles?: AIProfile[];
+  allFeatures?: Feature[];
+}
 
 export function EditFeatureDialog({
   feature,
@@ -191,7 +200,8 @@ export function EditFeatureDialog({
       model,
       thinkingLevel: modelSupportsThinking(model) ? editingFeature.thinkingLevel : 'none',
       // Auto-default to Z.AI endpoint for GLM-4.7
-      implementationEndpointPreset: model === 'glm-4.7' ? 'zai' : editingFeature.implementationEndpointPreset,
+      implementationEndpointPreset:
+        model === 'glm-4.7' ? 'zai' : editingFeature.implementationEndpointPreset,
     });
   };
 

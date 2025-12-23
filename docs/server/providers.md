@@ -710,6 +710,112 @@ describe('Provider Integration', () => {
 
 ---
 
+---
+
+### 3. Z.AI (GLM Coding Plan) Provider
+
+**Location**: `apps/server/src/providers/claude-provider.ts` (reuses Claude Provider with custom endpoint)
+
+Uses `@anthropic-ai/claude-agent-sdk` with custom endpoint injection for GLM-4.7 model.
+
+#### Features
+
+- ✅ All Claude Provider features (multi-turn, vision, tools, streaming)
+- ✅ Custom endpoint support via `providerConfig.env`
+- ✅ Per-request environment variable injection
+- ✅ Uses Z.AI API key for authentication
+
+#### Model Detection
+
+Routes models that:
+
+- Start with `"glm-"` (e.g., `"glm-4.7"`)
+- Are GLM aliases: `"glm-4.7"`
+
+#### Authentication
+
+Requires:
+
+- `ANTHROPIC_BASE_URL` environment variable: `https://api.z.ai/api/anthropic`
+- `ANTHROPIC_AUTH_TOKEN` environment variable: Your Z.AI API key
+- `API_TIMEOUT_MS` environment variable (recommended): `3000000` (50 minutes)
+
+> **Note**: Z.AI credentials are stored separately from Anthropic credentials in `credentials.json` under `apiKeys.zai`.
+
+#### Environment Injection
+
+The ClaudeProvider supports per-request environment injection via `providerConfig`:
+
+```typescript
+const stream = provider.executeQuery({
+  prompt: 'Implement feature',
+  model: 'glm-4.7',
+  providerConfig: {
+    env: {
+      ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic',
+      ANTHROPIC_AUTH_TOKEN: '<zai_api_key>',
+      API_TIMEOUT_MS: '3000000',
+    },
+  },
+  // ... other options
+});
+```
+
+This enables the same ClaudeProvider to route requests to different endpoints based on the selected model or profile configuration.
+
+#### Example Usage
+
+```typescript
+const provider = new ClaudeProvider();
+
+// Use GLM-4.7 via Z.AI endpoint
+const stream = provider.executeQuery({
+  prompt: 'Write a React component',
+  model: 'glm-4.7',
+  providerConfig: {
+    env: {
+      ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic',
+      ANTHROPIC_AUTH_TOKEN: getApiKey('zai'), // From credentials
+      API_TIMEOUT_MS: '3000000',
+    },
+  },
+  cwd: '/project/path',
+  systemPrompt: 'You are a coding assistant.',
+  maxTurns: 20,
+  allowedTools: ['Read', 'Write', 'Bash'],
+  abortController: new AbortController(),
+});
+
+for await (const msg of stream) {
+  if (msg.type === 'assistant') {
+    console.log(msg.message?.content);
+  }
+}
+```
+
+#### Plan vs. Code Model Execution
+
+GLM-4.7 is designed to work with a two-phase execution model:
+
+1. **Planning Phase**: Uses a planning model (e.g., Claude Opus) to generate a detailed plan/spec
+2. **Implementation Phase**: Uses GLM-4.7 via Z.AI endpoint to implement the plan
+
+This is controlled via `AIProfile` settings:
+
+```typescript
+// Profile with separate planning and implementation models
+const profile: AIProfile = {
+  model: 'glm-4.7', // Implementation model
+  planningModel: 'opus', // Planning model
+  implementationEndpointPreset: 'zai', // Use Z.AI endpoint for implementation
+  // ... other fields
+};
+```
+
+The `AutoModeService` automatically handles two-phase execution when `planningMode !== 'skip'`.
+
+---
+
 ## Environment Variables
 
 ### Claude Provider
@@ -729,6 +835,21 @@ OPENAI_API_KEY=sk-...
 # Optional:
 CODEX_CLI_PATH=/custom/path/to/codex
 ```
+
+### Z.AI (GLM Coding Plan) Provider
+
+```bash
+# Required:
+ANTHROPIC_AUTH_TOKEN=<zai_api_key>
+
+# Required (endpoint override):
+ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic
+
+# Optional (recommended):
+API_TIMEOUT_MS=3000000
+```
+
+> **Note**: These are injected per-request via `providerConfig.env` when using GLM-4.7 model. The Z.AI API key is stored in `credentials.json` under `apiKeys.zai`.
 
 ---
 
