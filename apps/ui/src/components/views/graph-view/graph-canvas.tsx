@@ -4,6 +4,7 @@ import {
   Background,
   BackgroundVariant,
   MiniMap,
+  Panel,
   useNodesState,
   useEdgesState,
   ReactFlowProvider,
@@ -14,9 +15,25 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { Feature } from '@/store/app-store';
-import { TaskNode, DependencyEdge, GraphControls, GraphLegend } from './components';
-import { useGraphNodes, useGraphLayout, type TaskNodeData } from './hooks';
+import {
+  TaskNode,
+  DependencyEdge,
+  GraphControls,
+  GraphLegend,
+  GraphFilterControls,
+} from './components';
+import {
+  useGraphNodes,
+  useGraphLayout,
+  useGraphFilter,
+  type TaskNodeData,
+  type GraphFilterState,
+  type NodeActionCallbacks,
+} from './hooks';
 import { cn } from '@/lib/utils';
+import { useDebounceValue } from 'usehooks-ts';
+import { SearchX } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 // Define custom node and edge types - using any to avoid React Flow's strict typing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,8 +49,10 @@ const edgeTypes: any = {
 interface GraphCanvasProps {
   features: Feature[];
   runningAutoTasks: string[];
-  onNodeClick?: (featureId: string) => void;
+  searchQuery: string;
+  onSearchQueryChange: (query: string) => void;
   onNodeDoubleClick?: (featureId: string) => void;
+  nodeActionCallbacks?: NodeActionCallbacks;
   backgroundStyle?: React.CSSProperties;
   className?: string;
 }
@@ -41,18 +60,41 @@ interface GraphCanvasProps {
 function GraphCanvasInner({
   features,
   runningAutoTasks,
-  onNodeClick,
+  searchQuery,
+  onSearchQueryChange,
   onNodeDoubleClick,
+  nodeActionCallbacks,
   backgroundStyle,
   className,
 }: GraphCanvasProps) {
   const [isLocked, setIsLocked] = useState(false);
   const [layoutDirection, setLayoutDirection] = useState<'LR' | 'TB'>('LR');
 
-  // Transform features to nodes and edges
+  // Filter state (category, status, and negative toggle are local to graph view)
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [isNegativeFilter, setIsNegativeFilter] = useState(false);
+
+  // Debounce search query for performance with large graphs
+  const [debouncedSearchQuery] = useDebounceValue(searchQuery, 200);
+
+  // Combined filter state
+  const filterState: GraphFilterState = {
+    searchQuery: debouncedSearchQuery,
+    selectedCategories,
+    selectedStatuses,
+    isNegativeFilter,
+  };
+
+  // Calculate filter results
+  const filterResult = useGraphFilter(features, filterState, runningAutoTasks);
+
+  // Transform features to nodes and edges with filter results
   const { nodes: initialNodes, edges: initialEdges } = useGraphNodes({
     features,
     runningAutoTasks,
+    filterResult,
+    actionCallbacks: nodeActionCallbacks,
   });
 
   // Apply layout
@@ -80,13 +122,13 @@ function GraphCanvasInner({
     [runLayout]
   );
 
-  // Handle node click
-  const handleNodeClick = useCallback(
-    (_event: React.MouseEvent, node: Node<TaskNodeData>) => {
-      onNodeClick?.(node.id);
-    },
-    [onNodeClick]
-  );
+  // Handle clear all filters
+  const handleClearFilters = useCallback(() => {
+    onSearchQueryChange('');
+    setSelectedCategories([]);
+    setSelectedStatuses([]);
+    setIsNegativeFilter(false);
+  }, [onSearchQueryChange]);
 
   // Handle node double click
   const handleNodeDoubleClick = useCallback(
@@ -122,7 +164,6 @@ function GraphCanvasInner({
         edges={edges}
         onNodesChange={isLocked ? undefined : onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -158,7 +199,35 @@ function GraphCanvasInner({
           layoutDirection={layoutDirection}
         />
 
+        <GraphFilterControls
+          filterState={filterState}
+          availableCategories={filterResult.availableCategories}
+          hasActiveFilter={filterResult.hasActiveFilter}
+          onCategoriesChange={setSelectedCategories}
+          onStatusesChange={setSelectedStatuses}
+          onNegativeFilterChange={setIsNegativeFilter}
+          onClearFilters={handleClearFilters}
+        />
+
         <GraphLegend />
+
+        {/* Empty state when all nodes are filtered out */}
+        {filterResult.hasActiveFilter && filterResult.matchedNodeIds.size === 0 && (
+          <Panel position="top-center" className="mt-20">
+            <div className="flex flex-col items-center gap-3 p-6 rounded-lg bg-popover/95 backdrop-blur-sm border border-border shadow-lg text-popover-foreground">
+              <SearchX className="w-10 h-10 text-muted-foreground" />
+              <div className="text-center">
+                <p className="text-sm font-medium">No matching tasks</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Try adjusting your filters or search query
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleClearFilters} className="mt-1">
+                Clear Filters
+              </Button>
+            </div>
+          </Panel>
+        )}
       </ReactFlow>
     </div>
   );

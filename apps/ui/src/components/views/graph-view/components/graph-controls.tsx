@@ -31,7 +31,7 @@ export function GraphControls({
   return (
     <Panel position="bottom-left" className="flex flex-col gap-2">
       <TooltipProvider delayDuration={200}>
-        <div className="flex flex-col gap-1 p-1.5 rounded-lg bg-popover/90 backdrop-blur-sm border border-border shadow-lg">
+        <div className="flex flex-col gap-1 p-1.5 rounded-lg bg-popover/90 backdrop-blur-sm border border-border shadow-lg text-popover-foreground">
           {/* Zoom controls */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -120,22 +120,13 @@ export function GraphControls({
               <Button
                 variant="ghost"
                 size="sm"
-                className={cn(
-                  'h-8 w-8 p-0',
-                  isLocked && 'bg-brand-500/20 text-brand-500'
-                )}
+                className={cn('h-8 w-8 p-0', isLocked && 'bg-brand-500/20 text-brand-500')}
                 onClick={onToggleLock}
               >
-                {isLocked ? (
-                  <Lock className="w-4 h-4" />
-                ) : (
-                  <Unlock className="w-4 h-4" />
-                )}
+                {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right">
-              {isLocked ? 'Unlock Nodes' : 'Lock Nodes'}
-            </TooltipContent>
+            <TooltipContent side="right">{isLocked ? 'Unlock Nodes' : 'Lock Nodes'}</TooltipContent>
           </Tooltip>
         </div>
       </TooltipProvider>

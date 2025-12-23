@@ -1,12 +1,5 @@
 import { Panel } from '@xyflow/react';
-import {
-  Clock,
-  Play,
-  Pause,
-  CheckCircle2,
-  Lock,
-  AlertCircle,
-} from 'lucide-react';
+import { Clock, Play, Pause, CheckCircle2, Lock, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const legendItems = [
@@ -51,7 +44,7 @@ const legendItems = [
 export function GraphLegend() {
   return (
     <Panel position="bottom-right" className="pointer-events-none">
-      <div className="flex flex-wrap gap-3 p-2 rounded-lg bg-popover/90 backdrop-blur-sm border border-border shadow-lg pointer-events-auto">
+      <div className="flex flex-wrap gap-3 p-2 rounded-lg bg-popover/90 backdrop-blur-sm border border-border shadow-lg pointer-events-auto text-popover-foreground">
         {legendItems.map((item) => {
           const Icon = item.icon;
           return (

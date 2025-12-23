@@ -3,6 +3,7 @@ import type { Project } from '@/lib/electron';
 
 interface UseProjectPickerProps {
   projects: Project[];
+  currentProject: Project | null;
   isProjectPickerOpen: boolean;
   setIsProjectPickerOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
   setCurrentProject: (project: Project) => void;
@@ -10,6 +11,7 @@ interface UseProjectPickerProps {
 
 export function useProjectPicker({
   projects,
+  currentProject,
   isProjectPickerOpen,
   setIsProjectPickerOpen,
   setCurrentProject,
@@ -27,22 +29,32 @@ export function useProjectPicker({
     return projects.filter((project) => project.name.toLowerCase().includes(query));
   }, [projects, projectSearchQuery]);
 
-  // Reset selection when filtered results change
+  // Reset selection when filtered results change and project picker is open
   useEffect(() => {
-    setSelectedProjectIndex(0);
-  }, [filteredProjects.length, projectSearchQuery]);
+    if (!isProjectPickerOpen) {
+      return;
+    }
 
-  // Reset search query when dropdown closes
+    if (!projectSearchQuery.trim()) {
+      const currentIndex = currentProject
+        ? filteredProjects.findIndex((p) => p.id === currentProject.id)
+        : -1;
+      if (currentIndex !== -1) {
+        setSelectedProjectIndex(currentIndex);
+        return;
+      }
+    }
+
+    setSelectedProjectIndex(0);
+  }, [isProjectPickerOpen, filteredProjects.length, projectSearchQuery, currentProject]);
+
+  // Reset search query when dropdown closes, set to current project index when it opens
   useEffect(() => {
     if (!isProjectPickerOpen) {
       setProjectSearchQuery('');
       setSelectedProjectIndex(0);
-    }
-  }, [isProjectPickerOpen]);
-
-  // Focus the search input when dropdown opens
-  useEffect(() => {
-    if (isProjectPickerOpen) {
+    } else {
+      // Focus the search input when dropdown opens
       // Small delay to ensure the dropdown is rendered
       setTimeout(() => {
         projectSearchInputRef.current?.focus();

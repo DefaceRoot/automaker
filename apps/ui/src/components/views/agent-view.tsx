@@ -17,6 +17,7 @@ import {
   ImageIcon,
   ChevronDown,
   FileText,
+  Square,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useElectronAgent } from '@/hooks/use-electron-agent';
@@ -83,6 +84,7 @@ export function AgentView() {
     isConnected,
     sendMessage,
     clearHistory,
+    stopExecution,
     error: agentError,
   } = useElectronAgent({
     sessionId: currentSessionId || '',
@@ -914,21 +916,33 @@ export function AgentView() {
                 <Paperclip className="w-4 h-4" />
               </Button>
 
-              {/* Send Button */}
-              <Button
-                onClick={handleSend}
-                disabled={
-                  (!input.trim() &&
-                    selectedImages.length === 0 &&
-                    selectedTextFiles.length === 0) ||
-                  isProcessing ||
-                  !isConnected
-                }
-                className="h-11 px-4 rounded-xl"
-                data-testid="send-message"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+              {/* Send / Stop Button */}
+              {isProcessing ? (
+                <Button
+                  onClick={stopExecution}
+                  disabled={!isConnected}
+                  className="h-11 px-4 rounded-xl"
+                  variant="destructive"
+                  data-testid="stop-agent"
+                  title="Stop generation"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSend}
+                  disabled={
+                    (!input.trim() &&
+                      selectedImages.length === 0 &&
+                      selectedTextFiles.length === 0) ||
+                    !isConnected
+                  }
+                  className="h-11 px-4 rounded-xl"
+                  data-testid="send-message"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              )}
             </div>
 
             {/* Keyboard hint */}

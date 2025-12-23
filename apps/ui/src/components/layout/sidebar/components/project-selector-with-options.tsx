@@ -69,6 +69,7 @@ export function ProjectSelectorWithOptions({
     filteredProjects,
   } = useProjectPicker({
     projects,
+    currentProject,
     isProjectPickerOpen,
     setIsProjectPickerOpen,
     setCurrentProject,
