@@ -257,6 +257,7 @@ export async function syncCredentialsToServer(apiKeys: {
   anthropic?: string;
   google?: string;
   openai?: string;
+  zai?: string;
 }): Promise<boolean> {
   if (!isElectron()) return false;
 

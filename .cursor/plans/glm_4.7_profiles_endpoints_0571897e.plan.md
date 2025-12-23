@@ -7,12 +7,12 @@ todos:
     status: completed
   - id: settings-zai-key
     content: Add Z.AI API key storage in UI + sync to server credentials schema.
-    status: pending
+    status: completed
     dependencies:
       - types-glm
   - id: profiles-plan-vs-code
     content: Extend AIProfile schema + profile form UI for planning model vs implementation model + endpoint override.
-    status: pending
+    status: in_progress
     dependencies:
       - types-glm
       - settings-zai-key
@@ -106,8 +106,8 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 - Keep existing `model` as the **implementation model**.
 - Add `planningModel?: AgentModel` (default to `model` when absent).
 - Add implementation endpoint override fields (optional):
-  - `implementationEndpointPreset?: 'default' | 'zai' | 'custom'`
-  - `implementationEndpointUrl?: string` (only when preset=custom)
+- `implementationEndpointPreset?: 'default' | 'zai' | 'custom'`
+- `implementationEndpointUrl?: string` (only when preset=custom)
 - **Feature**:
 - Add `planningModel?: string` and implementation endpoint override fields so execution is deterministic per feature.
 - Keep existing `model` as implementation model.
@@ -128,11 +128,11 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 - [`libs/types/src/model.ts`](libs/types/src/model.ts): extend `AgentModel` to include `'glm-4.7'`.
 - [`libs/model-resolver/src/resolver.ts`](libs/model-resolver/src/resolver.ts): treat `glm-` strings as passthrough.
 - Update display helpers:
-  - [`apps/ui/src/lib/utils.ts`](apps/ui/src/lib/utils.ts): add GLM to `getModelDisplayName()`, and update `modelSupportsThinking()` to return **false** for `glm-4.7`.
-  - UI model lists:
-  - [`apps/ui/src/components/views/profiles-view/constants.ts`](apps/ui/src/components/views/profiles-view/constants.ts)
-  - [`apps/ui/src/components/views/board-view/shared/model-constants.ts`](apps/ui/src/components/views/board-view/shared/model-constants.ts)
-  - [`libs/types/src/model-display.ts`](libs/types/src/model-display.ts) if used elsewhere
+- [`apps/ui/src/lib/utils.ts`](apps/ui/src/lib/utils.ts): add GLM to `getModelDisplayName()`, and update `modelSupportsThinking()` to return **false** for `glm-4.7`.
+- UI model lists:
+- [`apps/ui/src/components/views/profiles-view/constants.ts`](apps/ui/src/components/views/profiles-view/constants.ts)
+- [`apps/ui/src/components/views/board-view/shared/model-constants.ts`](apps/ui/src/components/views/board-view/shared/model-constants.ts)
+- [`libs/types/src/model-display.ts`](libs/types/src/model-display.ts) if used elsewhere
 
 ### B) Add Z.AI API key to Settings → API Keys
 
@@ -141,11 +141,11 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 - UI settings form:
 - [`apps/ui/src/config/api-providers.ts`](apps/ui/src/config/api-providers.ts): add a provider config entry for Z.AI.
 - [`apps/ui/src/components/views/settings-view/api-keys/hooks/use-api-key-management.ts`](apps/ui/src/components/views/settings-view/api-keys/hooks/use-api-key-management.ts):
-  - Add `zaiKey` state + show/hide.
-  - Update `handleSave()` to:
-  - update Zustand `apiKeys`
-  - call `syncCredentialsToServer({ zai: zaiKey, ... })`
-  - Add a **Z.AI connection test** that calls a new/extended backend verify route.
+- Add `zaiKey` state + show/hide.
+- Update `handleSave()` to:
+- update Zustand `apiKeys`
+- call `syncCredentialsToServer({ zai: zaiKey, ... })`
+- Add a **Z.AI connection test** that calls a new/extended backend verify route.
 - Credentials sync typing:
 - [`apps/ui/src/hooks/use-settings-migration.ts`](apps/ui/src/hooks/use-settings-migration.ts): add `zai?: string` to `syncCredentialsToServer` argument.
 - Backend credentials schema:
@@ -158,19 +158,19 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 - [`libs/types/src/settings.ts`](libs/types/src/settings.ts): add `planningModel?`, and implementation endpoint override fields to `AIProfile`.
 - Profile form:
 - [`apps/ui/src/components/views/profiles-view/components/profile-form.tsx`](apps/ui/src/components/views/profiles-view/components/profile-form.tsx):
-  - Replace single “Model” picker with:
-  - **Planning Model** picker
-  - **Implementation Model** picker (includes GLM-4.7)
-  - Add an “Implementation Endpoint” section:
-  - Default: “Automatic (based on model)”
-  - When implementation model is GLM-4.7, default preset to Z.AI.
-  - Advanced: allow “Custom” + URL input.
-  - Validation:
-  - If implementation model is GLM-4.7 and `apiKeys.zai` is empty → block save with clear error.
+- Replace single “Model” picker with:
+- **Planning Model** picker
+- **Implementation Model** picker (includes GLM-4.7)
+- Add an “Implementation Endpoint” section:
+- Default: “Automatic (based on model)”
+- When implementation model is GLM-4.7, default preset to Z.AI.
+- Advanced: allow “Custom” + URL input.
+- Validation:
+- If implementation model is GLM-4.7 and `apiKeys.zai` is empty → block save with clear error.
 - Built-in profiles:
 - [`apps/ui/src/store/app-store.ts`](apps/ui/src/store/app-store.ts): update default profiles to include `planningModel` (same as existing) and endpoint preset defaults.
 - Optional (recommended): add a **built-in** profile:
-  - “GLM Coding (Plan Opus, Code GLM-4.7)” (planningModel=opus, model=glm-4.7)
+- “GLM Coding (Plan Opus, Code GLM-4.7)” (planningModel=opus, model=glm-4.7)
 
 ### D) Propagate profile settings into Features
 
@@ -178,13 +178,13 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 - [`libs/types/src/feature.ts`](libs/types/src/feature.ts): add `planningModel?: string`, `implementationEndpointPreset?`, `implementationEndpointUrl?`.
 - UI feature create/edit:
 - [`apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx`](apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx):
-  - When a default profile is applied, set:
-  - `model` (implementation)
-  - `planningModel`
-  - endpoint override fields
-  - If user manually changes implementation model to GLM-4.7, set endpoint preset to Z.AI by default.
+- When a default profile is applied, set:
+- `model` (implementation)
+- `planningModel`
+- endpoint override fields
+- If user manually changes implementation model to GLM-4.7, set endpoint preset to Z.AI by default.
 - [`apps/ui/src/components/views/board-view/dialogs/edit-feature-dialog.tsx`](apps/ui/src/components/views/board-view/dialogs/edit-feature-dialog.tsx):
-  - Add fields to edit planning model + implementation model + endpoint override.
+- Add fields to edit planning model + implementation model + endpoint override.
 - Profile quick select:
 - [`apps/ui/src/components/views/board-view/shared/profile-quick-select.tsx`](apps/ui/src/components/views/board-view/shared/profile-quick-select.tsx): update callback to return both models + endpoint override.
 
@@ -193,25 +193,25 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 - Provider execution options:
 - [`libs/types/src/provider.ts`](libs/types/src/provider.ts): add `providerConfig?: ProviderConfig` to `ExecuteOptions`.
 - [`apps/server/src/providers/claude-provider.ts`](apps/server/src/providers/claude-provider.ts):
-  - Accept `providerConfig.env` and pass it to the SDK (preferred) or apply a safe fallback.
-  - Add GLM-4.7 to `getAvailableModels()` (provider="zai").
+- Accept `providerConfig.env` and pass it to the SDK (preferred) or apply a safe fallback.
+- Add GLM-4.7 to `getAvailableModels()` (provider="zai").
 - [`apps/server/src/providers/provider-factory.ts`](apps/server/src/providers/provider-factory.ts): treat `glm-` models as supported by ClaudeProvider (avoid warnings).
 - Auto-mode execution refactor:
 - [`apps/server/src/services/auto-mode-service.ts`](apps/server/src/services/auto-mode-service.ts):
-  - Read from feature:
-  - `planningModel = resolveModelString(feature.planningModel ?? feature.model)`
-  - `implementationModel = resolveModelString(feature.model)`
-  - Implement two-phase execution when `planningMode !== 'skip'`:
-  - Phase 1 (planningModel): run a planning-only prompt (new prompts that _stop after_ `[PLAN_GENERATED]` / `[SPEC_GENERATED]` and do not proceed).
-  - Keep the existing approval loop, but it should only re-run **Phase 1**.
-  - Phase 2 (implementationModel): run continuation prompts / task prompts.
-  - For each provider call, compute `providerConfig.env` based on the _model being used_:
-  - If model starts with `glm-` OR endpoint preset is Z.AI/custom:
+- Read from feature:
+- `planningModel = resolveModelString(feature.planningModel ?? feature.model)`
+- `implementationModel = resolveModelString(feature.model)`
+- Implement two-phase execution when `planningMode !== 'skip'`:
+- Phase 1 (planningModel): run a planning-only prompt (new prompts that *stop after* `[PLAN_GENERATED]` / `[SPEC_GENERATED]` and do not proceed).
+- Keep the existing approval loop, but it should only re-run **Phase 1**.
+- Phase 2 (implementationModel): run continuation prompts / task prompts.
+- For each provider call, compute `providerConfig.env` based on the *model being used*:
+- If model starts with `glm-` OR endpoint preset is Z.AI/custom:
     - `ANTHROPIC_BASE_URL = (customUrl ?? "https://api.z.ai/api/anthropic")`
     - `ANTHROPIC_AUTH_TOKEN = <credentials.apiKeys.zai>`
     - `API_TIMEOUT_MS = "3000000"`
-  - Else: no base url override; let Anthropic API key auth apply.
-  - Hard-fail with a clear error if required credentials are missing.
+- Else: no base url override; let Anthropic API key auth apply.
+- Hard-fail with a clear error if required credentials are missing.
 - Agent chat execution:
 - [`apps/server/src/services/agent-service.ts`](apps/server/src/services/agent-service.ts): when effective model is `glm-4.7`, use the same env injection approach.
 
@@ -219,8 +219,8 @@ From Z.AI docs ([`https://docs.z.ai/devpack/tool/claude`](https://docs.z.ai/devp
 
 - Add a “Test Z.AI Connection” button:
 - Extend [`apps/server/src/routes/setup/routes/verify-claude-auth.ts`](apps/server/src/routes/setup/routes/verify-claude-auth.ts) OR add a new route under settings to:
-  - Temporarily execute a minimal `query()` using env injection and `model: "glm-4.7"`.
-  - Return authenticated/error.
+- Temporarily execute a minimal `query()` using env injection and `model: "glm-4.7"`.
+- Return authenticated/error.
 - Update UI copy:
 - [`apps/ui/src/components/views/settings-view/api-keys/api-keys-section.tsx`](apps/ui/src/components/views/settings-view/api-keys/api-keys-section.tsx): adjust text (“Keys are stored locally”) to reflect file-based sync in Electron.
 
@@ -252,8 +252,8 @@ If `@anthropic-ai/claude-agent-sdk` cannot accept env overrides per query:
 - Add feature using that profile; verify feature.json includes new fields.
 - **Backend**:
 - Run a feature with planningMode=lite/spec/full and confirm:
-  - phase 1 uses planning model
-  - phase 2 uses implementation model
+- phase 1 uses planning model
+- phase 2 uses implementation model
 - Run agent chat with GLM-4.7.
 - **Playwright / unit tests**:
 - Update fixtures that assert built-in profile lists: [`apps/ui/tests/utils/project/setup.ts`](apps/ui/tests/utils/project/setup.ts).
@@ -281,6 +281,7 @@ sequenceDiagram
   AutoMode->>SettingsAPI: read credentials (zai)
   AutoMode->>ClaudeSDK: query(planningModel)
   AutoMode->>ClaudeSDK: query(implModel, env=ZAI_base_url+token)
+
 
 
 

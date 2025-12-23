@@ -449,6 +449,7 @@ export interface ElectronAPI {
       success: boolean;
       hasAnthropicKey: boolean;
       hasGoogleKey: boolean;
+      hasZaiKey: boolean;
     }>;
     getPlatform: () => Promise<{
       success: boolean;
@@ -1011,10 +1012,11 @@ interface SetupAPI {
   }>;
   storeApiKey: (provider: string, apiKey: string) => Promise<{ success: boolean; error?: string }>;
   getApiKeys: () => Promise<{
-    success: boolean;
-    hasAnthropicKey: boolean;
-    hasGoogleKey: boolean;
-  }>;
+      success: boolean;
+      hasAnthropicKey: boolean;
+      hasGoogleKey: boolean;
+      hasZaiKey: boolean;
+    }>;
   deleteApiKey: (
     provider: string
   ) => Promise<{ success: boolean; error?: string; message?: string }>;
@@ -1097,6 +1099,7 @@ function createMockSetupAPI(): SetupAPI {
         success: true,
         hasAnthropicKey: false,
         hasGoogleKey: false,
+        hasZaiKey: false,
       };
     },
 

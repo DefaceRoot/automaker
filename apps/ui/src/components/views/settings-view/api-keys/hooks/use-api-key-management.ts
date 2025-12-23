@@ -17,22 +17,46 @@ interface ApiKeyStatus {
  * Custom hook for managing API key state and operations
  * Handles input values, visibility toggles, connection testing, and saving
  */
+import { useState, useEffect } from 'react';
+import { useAppStore } from '@/store/app-store';
+import { getElectronAPI } from '@/lib/electron';
+import type { ProviderConfigParams } from '@/config/api-providers';
+
+interface TestResult {
+  success: boolean;
+  message: string;
+}
+
+interface ApiKeyStatus {
+  hasAnthropicKey: boolean;
+  hasGoogleKey: boolean;
+  hasZaiKey: boolean;
+}
+
+/**
+ * Custom hook for managing API key state and operations
+ * Handles input values, visibility toggles, connection testing, and saving
+ */
 export function useApiKeyManagement() {
   const { apiKeys, setApiKeys } = useAppStore();
 
   // API key values
   const [anthropicKey, setAnthropicKey] = useState(apiKeys.anthropic);
   const [googleKey, setGoogleKey] = useState(apiKeys.google);
+  const [zaiKey, setZaiKey] = useState(apiKeys.zai);
 
   // Visibility toggles
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showGoogleKey, setShowGoogleKey] = useState(false);
+  const [showZaiKey, setShowZaiKey] = useState(false);
 
   // Test connection states
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testingGeminiConnection, setTestingGeminiConnection] = useState(false);
   const [geminiTestResult, setGeminiTestResult] = useState<TestResult | null>(null);
+  const [testingZaiConnection, setTestingZaiConnection] = useState(false);
+  const [zaiTestResult, setZaiTestResult] = useState<TestResult | null>(null);
 
   // API key status from environment
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
@@ -44,6 +68,7 @@ export function useApiKeyManagement() {
   useEffect(() => {
     setAnthropicKey(apiKeys.anthropic);
     setGoogleKey(apiKeys.google);
+    setZaiKey(apiKeys.zai);
   }, [apiKeys]);
 
   // Check API key status from environment on mount
@@ -57,6 +82,7 @@ export function useApiKeyManagement() {
             setApiKeyStatus({
               hasAnthropicKey: status.hasAnthropicKey,
               hasGoogleKey: status.hasGoogleKey,
+              hasZaiKey: false, // Z.AI doesn't have env var support yet
             });
           }
         } catch (error) {
@@ -113,8 +139,7 @@ export function useApiKeyManagement() {
       return;
     }
 
-    // For now, just validate the key format (starts with expected prefix)
-    // Full verification requires a backend endpoint
+    // For now, just validate that a key is provided (full verification requires backend endpoint)
     setGeminiTestResult({
       success: true,
       message: 'API key saved. Connection test not yet available.',
@@ -122,11 +147,36 @@ export function useApiKeyManagement() {
     setTestingGeminiConnection(false);
   };
 
+  // Test Z.AI connection
+  // TODO: Add backend endpoint for Z.AI API key verification
+  const handleTestZaiConnection = async () => {
+    setTestingZaiConnection(true);
+    setZaiTestResult(null);
+
+    // Basic validation - check key format
+    if (!zaiKey || zaiKey.trim().length < 10) {
+      setZaiTestResult({
+        success: false,
+        message: 'Please enter a valid API key.',
+      });
+      setTestingZaiConnection(false);
+      return;
+    }
+
+    // For now, just validate that a key is provided (full verification requires backend endpoint)
+    setZaiTestResult({
+      success: true,
+      message: 'API key saved. Connection test not yet available.',
+    });
+    setTestingZaiConnection(false);
+  };
+
   // Save API keys
   const handleSave = () => {
     setApiKeys({
       anthropic: anthropicKey,
       google: googleKey,
+      zai: zaiKey,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -152,6 +202,15 @@ export function useApiKeyManagement() {
       testing: testingGeminiConnection,
       onTest: handleTestGeminiConnection,
       result: geminiTestResult,
+    },
+    zai: {
+      value: zaiKey,
+      setValue: setZaiKey,
+      show: showZaiKey,
+      setShow: setShowZaiKey,
+      testing: testingZaiConnection,
+      onTest: handleTestZaiConnection,
+      result: zaiTestResult,
     },
   };
 
