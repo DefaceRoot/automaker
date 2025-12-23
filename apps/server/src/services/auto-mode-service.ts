@@ -19,6 +19,7 @@ import {
 import { resolveModelString, DEFAULT_MODELS } from '@automaker/model-resolver';
 import { resolveDependencies, areDependenciesSatisfied } from '@automaker/dependency-resolver';
 import { getFeatureDir, getAutomakerDir, getFeaturesDir } from '@automaker/platform';
+import { ProviderFactory } from '../providers/provider-factory.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -26,6 +27,7 @@ import * as secureFs from '../lib/secure-fs.js';
 import type { EventEmitter } from '../lib/events.js';
 import { createAutoModeOptions, validateWorkingDirectory } from '../lib/sdk-options.js';
 import { computeModelEnv, getZaiCredentialsError } from '../lib/env-computation.js';
+import { ProviderFactory } from '../providers/provider-factory.js';
 import { FeatureLoader } from './feature-loader.js';
 
 const execAsync = promisify(exec);
@@ -875,7 +877,7 @@ Address the follow-up instructions above. Review the previous work and make the 
 
       // Use fullPrompt (already built above) with model and all images
       // Note: Follow-ups skip planning mode - they continue from previous work
-      // Pass previousContext so the history is preserved in the output file
+      // Pass previousContext so that history is preserved in the output file
       // Context files are passed as system prompt for higher priority
       await this.runAgent(
         workDir,
@@ -884,8 +886,15 @@ Address the follow-up instructions above. Review the previous work and make the 
         abortController,
         projectPath,
         allImagePaths.length > 0 ? allImagePaths : imagePaths,
-        model,
+        model, // 6th param: model
+        undefined, // 7th param: planningModel - not used for follow-ups
         {
+          projectPath,
+          planningMode: 'skip', // Follow-ups don't require approval
+          previousContent: previousContext || undefined,
+          systemPrompt: contextFilesPrompt || undefined,
+        }
+      );
           projectPath,
           planningMode: 'skip', // Follow-ups don't require approval
           previousContent: previousContext || undefined,
@@ -1804,6 +1813,16 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       }
     }
 
+    // Resolve model and prepare execution parameters
+    const finalModel = model || resolveModelString(model, DEFAULT_MODELS.claude);
+    const maxTurns = 100; // Default max turns for agent execution
+    const allowedTools: string[] | undefined = ['Read', 'Glob', 'Grep']; // Default tools for auto mode
+
+    // Resolve model and prepare execution parameters
+    const finalModel = model || resolveModelString(model, DEFAULT_MODELS.claude);
+    const maxTurns = 100; // Default max turns for agent execution
+    const allowedTools: string[] | undefined = ['Read', 'Glob', 'Grep']; // Default tools for auto mode
+
     // Compute environment variables for Z.AI endpoint if needed
     const providerConfigEnv = credentials
       ? computeModelEnv(finalModel, { 
@@ -1816,37 +1835,6 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
     if (providerConfigEnv === null && (finalModel.startsWith('glm-'))) {
       throw new Error(getZaiCredentialsError());
     }
-
-    // Execute via provider with environment injection
-    const executeOptions: ExecuteOptions = {
-      prompt: promptContent,
-      model: finalModel,
-      maxTurns: maxTurns,
-      cwd: workDir,
-      allowedTools: allowedTools,
-      abortController,
-      systemPrompt: options?.systemPrompt,
-      ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
-    };
-    const sdkOptions = createAutoModeOptions({
-      cwd: workDir,
-      model: model,
-      abortController,
-    });
-
-    // Extract model, maxTurns, and allowedTools from SDK options
-    const finalModel = sdkOptions.model!;
-    const maxTurns = sdkOptions.maxTurns;
-    const allowedTools = sdkOptions.allowedTools as string[] | undefined;
-
-    console.log(
-      `[AutoMode] runAgent called for feature ${featureId} with model: ${finalModel}, planningMode: ${planningMode}, requiresApproval: ${requiresApproval}`
-    );
-
-    // Get provider for this model
-    const provider = ProviderFactory.getProviderForModel(finalModel);
-
-    console.log(`[AutoMode] Using provider "${provider.getName()}" for model "${finalModel}"`);
 
     // Build prompt content with images using utility
     const { content: promptContent } = await buildPromptWithImages(
@@ -1863,6 +1851,7 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       );
     }
 
+    // Execute via provider with environment injection
     const executeOptions: ExecuteOptions = {
       prompt: promptContent,
       model: finalModel,
@@ -1871,7 +1860,17 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       allowedTools: allowedTools,
       abortController,
       systemPrompt: options?.systemPrompt,
+      ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
     };
+
+    console.log(
+      `[AutoMode] runAgent called for feature ${featureId} with model: ${finalModel}, planningMode: ${planningMode}, requiresApproval: ${requiresApproval}`
+    );
+
+    // Get provider for this model
+    const provider = ProviderFactory.getProviderForModel(finalModel);
+
+    console.log(`[AutoMode] Using provider "${provider.getName()}" for model "${finalModel}"`);
 
     // Execute via provider
     const stream = provider.executeQuery(executeOptions);

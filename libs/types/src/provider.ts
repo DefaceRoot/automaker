@@ -34,16 +34,6 @@ export interface ExecuteOptions {
   conversationHistory?: ConversationMessage[]; // Previous messages for context
   sdkSessionId?: string; // Claude SDK session ID for resuming conversations
   providerConfig?: ProviderConfig; // Provider-specific configuration (env, auth, etc.)
-}>;
-  model: string;
-  cwd: string;
-  systemPrompt?: string;
-  maxTurns?: number;
-  allowedTools?: string[];
-  mcpServers?: Record<string, unknown>;
-  abortController?: AbortController;
-  conversationHistory?: ConversationMessage[]; // Previous messages for context
-  sdkSessionId?: string; // Claude SDK session ID for resuming conversations
 }
 
 /**

@@ -20,9 +20,3 @@ export function createApiKeysHandler() {
     }
   };
 }
-    } catch (error) {
-      logError(error, 'Get API keys failed');
-      res.status(500).json({ success: false, error: getErrorMessage(error) });
-    }
-  };
-}

@@ -28,7 +28,7 @@ todos:
       - feature-schema-propagation
   - id: verify-zai-auth
     content: Add backend verification endpoint + UI test button for Z.AI key.
-    status: pending
+    status: in_progress
     dependencies:
       - server-env-injection
   - id: tests-and-docs
@@ -281,6 +281,8 @@ sequenceDiagram
   AutoMode->>SettingsAPI: read credentials (zai)
   AutoMode->>ClaudeSDK: query(planningModel)
   AutoMode->>ClaudeSDK: query(implModel, env=ZAI_base_url+token)
+
+
 
 
 
