@@ -151,8 +151,10 @@ export interface AIProfile {
   name: string;
   /** User-friendly description */
   description: string;
-  /** Which Claude model to use (opus, sonnet, haiku) */
+  /** Which Claude model to use (opus, sonnet, haiku, glm-4.7) */
   model: AgentModel;
+  /** Optional planning model - defaults to model if not specified */
+  planningModel?: AgentModel;
   /** Extended thinking level for reasoning-based tasks */
   thinkingLevel: ThinkingLevel;
   /** Provider (currently only "claude") */
@@ -161,6 +163,10 @@ export interface AIProfile {
   isBuiltIn: boolean;
   /** Optional icon identifier or emoji */
   icon?: string;
+  /** Implementation endpoint preset configuration */
+  implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+  /** Custom endpoint URL (only when preset=custom) */
+  implementationEndpointUrl?: string;
 }
 
 /**

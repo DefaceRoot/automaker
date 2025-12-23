@@ -12,7 +12,7 @@ todos:
       - types-glm
   - id: profiles-plan-vs-code
     content: Extend AIProfile schema + profile form UI for planning model vs implementation model + endpoint override.
-    status: in_progress
+    status: completed
     dependencies:
       - types-glm
       - settings-zai-key
@@ -281,6 +281,7 @@ sequenceDiagram
   AutoMode->>SettingsAPI: read credentials (zai)
   AutoMode->>ClaudeSDK: query(planningModel)
   AutoMode->>ClaudeSDK: query(implModel, env=ZAI_base_url+token)
+
 
 
 

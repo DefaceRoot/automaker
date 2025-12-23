@@ -109,9 +109,11 @@ export function AddFeatureDialog({
     textFilePaths: [] as DescriptionTextFilePath[],
     skipTests: false,
     model: 'opus' as AgentModel,
+    planningModel: 'opus' as AgentModel,
     thinkingLevel: 'none' as ThinkingLevel,
     branchName: '',
     priority: 2 as number, // Default to medium priority
+    implementationEndpointPreset: undefined as 'default' | 'zai' | 'custom' | undefined,
   });
   const [newFeaturePreviewMap, setNewFeaturePreviewMap] = useState<ImagePreviewMap>(
     () => new Map()
@@ -148,7 +150,9 @@ export function AddFeatureDialog({
         branchName: defaultBranch || '',
         // Use default profile's model/thinkingLevel if set, else fallback to defaults
         model: defaultProfile?.model ?? 'opus',
+        planningModel: defaultProfile?.planningModel ?? (defaultProfile?.model ?? 'opus'),
         thinkingLevel: defaultProfile?.thinkingLevel ?? 'none',
+        implementationEndpointPreset: defaultProfile?.implementationEndpointPreset ?? 'default',
       }));
       setUseCurrentBranch(true);
       setPlanningMode(defaultPlanningMode);
@@ -270,11 +274,18 @@ export function AddFeatureDialog({
     });
   };
 
-  const handleProfileSelect = (model: AgentModel, thinkingLevel: ThinkingLevel) => {
+  const handleProfileSelect = (
+    model: AgentModel,
+    planningModel: AgentModel,
+    thinkingLevel: ThinkingLevel,
+    implementationEndpointPreset?: 'default' | 'zai' | 'custom'
+  ) => {
     setNewFeature({
       ...newFeature,
       model,
+      planningModel: planningModel || model,
       thinkingLevel,
+      implementationEndpointPreset,
     });
   };
 
@@ -449,7 +460,9 @@ export function AddFeatureDialog({
             <ProfileQuickSelect
               profiles={aiProfiles}
               selectedModel={newFeature.model}
+              selectedPlanningModel={newFeature.planningModel}
               selectedThinkingLevel={newFeature.thinkingLevel}
+              selectedImplementationEndpointPreset={newFeature.implementationEndpointPreset}
               onSelect={handleProfileSelect}
               showManageLink
               onManageLinkClick={() => {

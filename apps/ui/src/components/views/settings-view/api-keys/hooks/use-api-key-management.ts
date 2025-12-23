@@ -11,25 +11,6 @@ interface TestResult {
 interface ApiKeyStatus {
   hasAnthropicKey: boolean;
   hasGoogleKey: boolean;
-}
-
-/**
- * Custom hook for managing API key state and operations
- * Handles input values, visibility toggles, connection testing, and saving
- */
-import { useState, useEffect } from 'react';
-import { useAppStore } from '@/store/app-store';
-import { getElectronAPI } from '@/lib/electron';
-import type { ProviderConfigParams } from '@/config/api-providers';
-
-interface TestResult {
-  success: boolean;
-  message: string;
-}
-
-interface ApiKeyStatus {
-  hasAnthropicKey: boolean;
-  hasGoogleKey: boolean;
   hasZaiKey: boolean;
 }
 

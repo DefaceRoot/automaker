@@ -854,32 +854,38 @@ const DEFAULT_AI_PROFILES: AIProfile[] = [
     description:
       'Claude Opus with Ultrathink for complex architecture, migrations, or deep debugging.',
     model: 'opus',
+    planningModel: 'opus',
     thinkingLevel: 'ultrathink',
     provider: 'claude',
     isBuiltIn: true,
     icon: 'Brain',
+    implementationEndpointPreset: 'default',
   },
   {
     id: 'profile-balanced',
     name: 'Balanced',
     description: 'Claude Sonnet with medium thinking for typical development tasks.',
     model: 'sonnet',
+    planningModel: 'sonnet',
     thinkingLevel: 'medium',
     provider: 'claude',
     isBuiltIn: true,
     icon: 'Scale',
+    implementationEndpointPreset: 'default',
   },
   {
     id: 'profile-quick-edit',
     name: 'Quick Edit',
     description: 'Claude Haiku for fast, simple edits and minor fixes.',
     model: 'haiku',
+    planningModel: 'haiku',
     thinkingLevel: 'none',
     provider: 'claude',
     isBuiltIn: true,
     icon: 'Zap',
+    implementationEndpointPreset: 'default',
   },
-];
+];;
 
 const initialState: AppState = {
   projects: [],

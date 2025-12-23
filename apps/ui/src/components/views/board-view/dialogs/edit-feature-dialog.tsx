@@ -196,12 +196,19 @@ export function EditFeatureDialog({
     });
   };
 
-  const handleProfileSelect = (model: AgentModel, thinkingLevel: ThinkingLevel) => {
+  const handleProfileSelect = (
+    model: AgentModel,
+    planningModel: AgentModel,
+    thinkingLevel: ThinkingLevel,
+    implementationEndpointPreset?: 'default' | 'zai' | 'custom'
+  ) => {
     if (!editingFeature) return;
     setEditingFeature({
       ...editingFeature,
       model,
+      planningModel: planningModel || model,
       thinkingLevel,
+      implementationEndpointPreset,
     });
   };
 
@@ -436,7 +443,9 @@ export function EditFeatureDialog({
             <ProfileQuickSelect
               profiles={aiProfiles}
               selectedModel={editingFeature.model ?? 'opus'}
+              selectedPlanningModel={editingFeature.planningModel}
               selectedThinkingLevel={editingFeature.thinkingLevel ?? 'none'}
+              selectedImplementationEndpointPreset={editingFeature.implementationEndpointPreset}
               onSelect={handleProfileSelect}
               testIdPrefix="edit-profile-quick-select"
             />

@@ -33,6 +33,9 @@ export interface Feature {
   dependencies?: string[];
   spec?: string;
   model?: string;
+  planningModel?: string;
+  implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+  implementationEndpointUrl?: string;
   imagePaths?: Array<string | FeatureImagePath | { path: string; [key: string]: unknown }>;
   textFilePaths?: FeatureTextFilePath[];
   // Branch info - worktree path is derived at runtime from branchName
