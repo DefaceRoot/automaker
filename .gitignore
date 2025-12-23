@@ -79,5 +79,13 @@ blob-report/
 
 # Misc
 *.pem
+*.key
+*.crt
+
+# AI Assistant configs (user-specific)
+.cursor/
+.claude/
+.claude_settings.json
+cursor-*.log
 
 docker-compose.override.yml
