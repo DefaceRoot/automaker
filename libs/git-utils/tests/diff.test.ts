@@ -117,6 +117,18 @@ describe('diff.ts', () => {
       expect(diff).toContain(`diff --git a/${fileName} b/${fileName}`);
       expect(diff).toContain('[Unable to read file content]');
     });
+
+    it('should handle directory path gracefully', async () => {
+      const dirName = 'some-directory';
+      const dirPath = path.join(tempDir, dirName);
+      await fs.mkdir(dirPath);
+
+      const diff = await generateSyntheticDiffForNewFile(tempDir, dirName);
+
+      expect(diff).toContain(`diff --git a/${dirName} b/${dirName}`);
+      expect(diff).toContain('new file mode 040000');
+      expect(diff).toContain('[Directory]');
+    });
   });
 
   describe('appendUntrackedFileDiffs', () => {
