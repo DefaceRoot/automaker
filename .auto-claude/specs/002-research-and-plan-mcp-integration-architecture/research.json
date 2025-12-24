@@ -1,0 +1,292 @@
+{
+  "integrations_researched": [
+    {
+      "name": "@anthropic-ai/claude-agent-sdk",
+      "type": "library",
+      "verified_package": {
+        "name": "@anthropic-ai/claude-agent-sdk",
+        "install_command": "npm install @anthropic-ai/claude-agent-sdk",
+        "version": "^0.1.72",
+        "verified": true,
+        "already_installed": true,
+        "location": "apps/server/package.json"
+      },
+      "api_patterns": {
+        "imports": [
+          "import { query } from '@anthropic-ai/claude-agent-sdk'",
+          "import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'"
+        ],
+        "initialization": "const response = query({ prompt, options: { mcpServers: {...}, allowedTools: [...] } })",
+        "key_functions": [
+          "query({ prompt, options }) - Main query function with MCP server support",
+          "createSdkMcpServer({ name, version, tools }) - Create custom MCP servers",
+          "tool(name, description, schema, handler) - Define individual tools"
+        ],
+        "mcp_server_config_formats": {
+          "stdio_transport": {
+            "description": "For local command-line MCP servers",
+            "schema": {
+              "command": "string - Executable command (e.g., 'npx', 'node')",
+              "args": "string[] - Command arguments",
+              "env": "Record<string, string> - Environment variables (optional)"
+            },
+            "example": {
+              "command": "npx",
+              "args": ["@modelcontextprotocol/server-filesystem"],
+              "env": { "ALLOWED_PATHS": "/path/to/project" }
+            }
+          },
+          "http_transport": {
+            "description": "For remote HTTP/SSE MCP servers",
+            "schema": {
+              "url": "string - Server URL",
+              "headers": "Record<string, string> - HTTP headers (optional)"
+            },
+            "example": {
+              "url": "https://api.example.com/mcp",
+              "headers": { "Authorization": "Bearer token" }
+            }
+          }
+        },
+        "tool_naming_convention": "mcp__servername__toolname",
+        "verified_against": "Context7 MCP: /anthropics/claude-agent-sdk-typescript"
+      },
+      "configuration": {
+        "env_vars": [],
+        "config_options": {
+          "mcpServers": "Record<string, McpServerConfig> - Named MCP server configurations",
+          "allowedTools": "string[] - List of tool names to enable (use mcp__server__tool format)",
+          "disallowedTools": "string[] - List of tool names to disable",
+          "permissionMode": "'default' | 'acceptEdits' | 'bypassPermissions'",
+          "canUseTool": "async (toolName, input) => { behavior, message } - Custom permission callback"
+        },
+        "dependencies": ["zod (for schema validation)"]
+      },
+      "infrastructure": {
+        "requires_docker": false,
+        "notes": "MCP servers can run as local processes or remote HTTP services"
+      },
+      "gotchas": [
+        "MCP servers are passed per-query, not globally configured in the SDK",
+        "Tool names must use mcp__servername__toolname format for MCP tools",
+        "Stdio transport spawns child processes - resource management needed",
+        "HTTP transport requires proper CORS and authentication setup"
+      ],
+      "research_sources": [
+        "Context7 MCP: /anthropics/claude-agent-sdk-typescript",
+        "Existing codebase: apps/server/src/providers/types.ts",
+        "Existing codebase: apps/server/package.json"
+      ]
+    },
+    {
+      "name": "@modelcontextprotocol/sdk",
+      "type": "library",
+      "verified_package": {
+        "name": "@modelcontextprotocol/sdk",
+        "install_command": "npm install @modelcontextprotocol/sdk",
+        "version": "latest",
+        "verified": true,
+        "already_installed": false,
+        "notes": "Only needed if creating custom in-process MCP servers"
+      },
+      "api_patterns": {
+        "imports": [
+          "import { Client } from '@modelcontextprotocol/sdk/client/index.js'",
+          "import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'",
+          "import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'",
+          "import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js'",
+          "import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'"
+        ],
+        "initialization": {
+          "client": "const client = new Client({ name, version }); await client.connect(transport);",
+          "server": "const server = new McpServer({ name, version }); server.registerTool(...)"
+        },
+        "key_functions": [
+          "client.connect(transport) - Connect to MCP server",
+          "client.listTools() - List available tools",
+          "client.callTool({ name, arguments }) - Execute a tool",
+          "server.registerTool(name, options, handler) - Register a tool on server",
+          "server.registerResource(name, uri, options, handler) - Register a resource"
+        ],
+        "verified_against": "Context7 MCP: /modelcontextprotocol/typescript-sdk"
+      },
+      "configuration": {
+        "env_vars": [],
+        "transport_types": [
+          "StdioClientTransport - For process-based servers",
+          "WebSocketClientTransport - For WebSocket connections",
+          "StreamableHTTPServerTransport - For HTTP server hosting",
+          "StreamableHTTPClientTransport - For HTTP client connections"
+        ],
+        "dependencies": ["zod (for schema validation)", "express (if hosting HTTP transport)"]
+      },
+      "infrastructure": {
+        "requires_docker": false
+      },
+      "gotchas": [
+        "Import paths use .js extensions even in TypeScript",
+        "Must call client.close() when done to cleanup resources",
+        "Session management required for stateful interactions"
+      ],
+      "research_sources": [
+        "Context7 MCP: /modelcontextprotocol/typescript-sdk"
+      ]
+    },
+    {
+      "name": "Existing Codebase - Settings Architecture",
+      "type": "codebase_pattern",
+      "verified_package": {
+        "name": "N/A - Internal pattern",
+        "verified": true
+      },
+      "api_patterns": {
+        "settings_types": {
+          "GlobalSettings": "libs/types/src/settings.ts - Global user preferences stored in {DATA_DIR}/settings.json",
+          "ProjectSettings": "libs/types/src/settings.ts - Per-project overrides stored in {projectPath}/.automaker/settings.json",
+          "Credentials": "libs/types/src/settings.ts - API keys stored in {DATA_DIR}/credentials.json"
+        },
+        "settings_location": "libs/types/src/settings.ts",
+        "settings_service": "apps/server/src/services/settings-service.ts",
+        "verified_against": "Direct codebase analysis"
+      },
+      "extension_points": {
+        "global_settings": "Add MCP configuration to GlobalSettings interface in libs/types/src/settings.ts",
+        "default_settings": "Update DEFAULT_GLOBAL_SETTINGS with default MCP config",
+        "settings_migration": "Increment SETTINGS_VERSION and add migration logic"
+      },
+      "research_sources": [
+        "libs/types/src/settings.ts",
+        "apps/server/src/types/settings.ts"
+      ]
+    },
+    {
+      "name": "Existing Codebase - Task Creation UI",
+      "type": "codebase_pattern",
+      "verified_package": {
+        "name": "N/A - Internal pattern",
+        "verified": true
+      },
+      "api_patterns": {
+        "ui_framework": "React with Radix UI primitives (Dialog, Tabs, Switch, etc.)",
+        "component_location": "apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx",
+        "state_management": "Zustand via useAppStore hook",
+        "feature_creation_props": {
+          "existing_fields": [
+            "title", "category", "description", "images",
+            "skipTests", "model", "planningModel", "thinkingLevel",
+            "branchName", "priority", "planningMode", "requirePlanApproval",
+            "implementationEndpointPreset", "implementationEndpointUrl"
+          ],
+          "mcp_extension_point": "Add enabledMcpServers: string[] to feature creation interface"
+        },
+        "verified_against": "Direct codebase analysis"
+      },
+      "ui_components_available": [
+        "Switch (from @/components/ui/switch) - For toggle functionality",
+        "Checkbox (from @/components/ui/checkbox) - For multi-select",
+        "Tabs (from @/components/ui/tabs) - Already used for Prompt/Model/Options tabs",
+        "Dialog patterns - Consistent modal design"
+      ],
+      "research_sources": [
+        "apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx",
+        "apps/ui/src/store/app-store.ts"
+      ]
+    },
+    {
+      "name": "Existing Codebase - Provider/Agent Architecture",
+      "type": "codebase_pattern",
+      "verified_package": {
+        "name": "N/A - Internal pattern",
+        "verified": true
+      },
+      "api_patterns": {
+        "execute_options": {
+          "location": "apps/server/src/providers/types.ts",
+          "interface": "ExecuteOptions",
+          "mcp_field_exists": true,
+          "current_definition": "mcpServers?: Record<string, unknown>"
+        },
+        "base_provider": {
+          "location": "apps/server/src/providers/base-provider.ts",
+          "method": "executeQuery(options: ExecuteOptions): AsyncGenerator<ProviderMessage>"
+        },
+        "verified_against": "Direct codebase analysis"
+      },
+      "extension_points": {
+        "execute_options": "mcpServers field already exists - need to properly type and pass per-task configs",
+        "provider_implementation": "Ensure Claude provider passes mcpServers to SDK query"
+      },
+      "research_sources": [
+        "apps/server/src/providers/types.ts",
+        "apps/server/src/providers/base-provider.ts",
+        "libs/types/src/provider.ts"
+      ]
+    }
+  ],
+  "unverified_claims": [],
+  "recommendations": [
+    {
+      "category": "Architecture",
+      "recommendation": "Store global MCP server configurations in GlobalSettings.mcpServers as an array of McpServerConfig objects",
+      "rationale": "Follows existing settings patterns and allows easy UI integration"
+    },
+    {
+      "category": "Architecture",
+      "recommendation": "Add enabledMcpServers: string[] field to feature/task creation to track per-task MCP selections",
+      "rationale": "Simple ID-based reference allows UI toggles without duplicating full configs"
+    },
+    {
+      "category": "Type Safety",
+      "recommendation": "Define strict TypeScript types for MCP server configurations instead of Record<string, unknown>",
+      "rationale": "Existing ExecuteOptions uses unknown type - should be properly typed for validation"
+    },
+    {
+      "category": "UI/UX",
+      "recommendation": "Add 'MCP Servers' tab to AddFeatureDialog alongside existing Prompt/Model/Options tabs",
+      "rationale": "Consistent with existing UI patterns, non-intrusive for users who don't use MCP"
+    },
+    {
+      "category": "Isolation",
+      "recommendation": "Pass only selected MCP servers in query options - SDK handles isolation automatically",
+      "rationale": "Claude Agent SDK's mcpServers option only loads specified servers per query"
+    },
+    {
+      "category": "Settings UI",
+      "recommendation": "Create new MCP section in Settings view for global server configuration",
+      "rationale": "Follows existing settings organization pattern (API Keys, Terminal, Audio, etc.)"
+    }
+  ],
+  "mcp_server_config_schema": {
+    "description": "Recommended TypeScript interface for MCP server configuration",
+    "schema": {
+      "McpServerConfig": {
+        "id": "string - Unique identifier for the server",
+        "name": "string - Display name for UI",
+        "description": "string - User-friendly description (optional)",
+        "enabled": "boolean - Whether server is available for selection",
+        "type": "'stdio' | 'http' - Transport type",
+        "config": "StdioConfig | HttpConfig - Transport-specific configuration"
+      },
+      "StdioConfig": {
+        "command": "string - Executable command",
+        "args": "string[] - Command arguments",
+        "env": "Record<string, string> - Environment variables (optional)"
+      },
+      "HttpConfig": {
+        "url": "string - Server URL",
+        "headers": "Record<string, string> - HTTP headers (optional)"
+      }
+    }
+  },
+  "feature_mcp_selection_schema": {
+    "description": "Per-task MCP server selection",
+    "schema": {
+      "enabledMcpServers": "string[] - Array of MCP server IDs enabled for this task"
+    }
+  },
+  "context7_libraries_used": [
+    "/anthropics/claude-agent-sdk-typescript",
+    "/modelcontextprotocol/typescript-sdk"
+  ],
+  "created_at": "2025-01-13T12:00:00Z"
+}

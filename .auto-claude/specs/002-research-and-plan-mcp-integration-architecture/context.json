@@ -1,0 +1,7 @@
+{
+  "task_description": "I would like you to use subagents to research the codebase of this application and figure out how we can integrate MCP support into the application. I would like a global MCP configuration in the settings where I can input all the MCP servers that I want in the application. But on a per-task basis, so for example, whenever the user clicks \"Add new feature\" to add a new task to the Kanban board, I would like a toggleable box that the user can toggle between different MCP servers that will be enabled for only that specific task. Obviously, you'll have to figure out how we can still integrate this when parallel tasks are running. But, essentially I want it to be a global MCPConfig to where I can input a bunch of MCP servers, but they will only be available to the agent and put into the agent's context window if they are enabled whenever the user starts the new task and enables or disables them. This needs to be very intuitive and user-friendly, and we need to make sure we 100% verify that if the MCP servers are not selected when the user makes the task in the create new task panel, they are absolutely not being loaded into the Claude code context window. Only the MCP servers that are enabled when the user enables them when creating the new_task should be the only ones that are loaded into context and the ones that have that Claude code as access to for that specific task.",
+  "scoped_services": [],
+  "files_to_modify": [],
+  "files_to_reference": [],
+  "created_at": "2025-12-23T20:25:59.023741"
+}

@@ -1,0 +1,70 @@
+{
+  "critique_completed": true,
+  "issues_found": [
+    {
+      "severity": "high",
+      "category": "accuracy",
+      "description": "SETTINGS_VERSION increment was incorrect. Spec claimed current version was 2, incrementing to 3. Actual current version is 1, so should increment to 2.",
+      "location": "Line 163 - Settings Migration Pattern section",
+      "fix_applied": "Changed `SETTINGS_VERSION = 3` to `SETTINGS_VERSION = 2` and updated migration logic from `if (settings.version < 3)` to `if (settings.version < 2)`",
+      "verified": true
+    },
+    {
+      "severity": "high",
+      "category": "accuracy",
+      "description": "Test file paths in QA section were incorrect. Spec referenced `apps/server/tests/services/settings-service.test.ts` but actual path includes `/unit/` subdirectory.",
+      "location": "Lines 300-302 - QA Acceptance Criteria / Unit Tests table",
+      "fix_applied": "Updated all test paths to `apps/server/tests/unit/services/settings-service.test.ts`",
+      "verified": true
+    },
+    {
+      "severity": "high",
+      "category": "completeness",
+      "description": "Spec referenced non-existent test file `libs/types/tests/settings.test.ts`. The libs/types folder has no tests directory.",
+      "location": "Line 301 - QA Unit Tests table",
+      "fix_applied": "Consolidated type validation tests into existing settings-service.test.ts location since that's where settings tests belong in this codebase.",
+      "verified": true
+    },
+    {
+      "severity": "medium",
+      "category": "completeness",
+      "description": "Missing documentation on SDK format conversion. The spec defines storage format with `type` discriminator in transport, but didn't explain how to convert to SDK's named-object format (which doesn't use type field).",
+      "location": "Implementation Notes section (was absent)",
+      "fix_applied": "Added new 'SDK Format Conversion' subsection explaining the storage-to-SDK format transformation with code examples showing both formats.",
+      "verified": true
+    },
+    {
+      "severity": "medium",
+      "category": "accuracy",
+      "description": "Migration logic referenced version 3 but should reference version 2 based on current codebase state.",
+      "location": "Lines 165-169 - Settings Migration Pattern",
+      "fix_applied": "Updated migration logic to check `settings.version < 2` and set `settings.version = 2`",
+      "verified": true
+    },
+    {
+      "severity": "low",
+      "category": "completeness",
+      "description": "Implementation notes didn't mention the need to strip type field when converting storage format to SDK format.",
+      "location": "DO section of Implementation Notes",
+      "fix_applied": "Added bullet point: 'Convert storage format to SDK format when passing to agent (strip `type` field)'",
+      "verified": true
+    }
+  ],
+  "issues_fixed": true,
+  "no_issues_found": false,
+  "critique_summary": "Found 6 issues (3 high, 2 medium, 1 low severity). Primary issues were: (1) incorrect SETTINGS_VERSION - current version is 1, not 2, so migration should go to version 2; (2) test file paths missing /unit/ subdirectory and referencing non-existent libs/types/tests path; (3) missing SDK format conversion documentation. All issues have been fixed. The spec now accurately reflects the codebase state and provides clear guidance for implementation.",
+  "confidence_level": "high",
+  "recommendations": [
+    "The spec is now implementation-ready with accurate version numbers and file paths",
+    "Consider adding a helper function `convertToSdkFormat(servers: McpServerConfig[]): Record<string, StdioConfig | HttpConfig>` for format conversion",
+    "Test migration logic carefully - ensure existing settings with version 1 get mcpServers array added correctly"
+  ],
+  "validation_performed": [
+    "Verified SETTINGS_VERSION = 1 in libs/types/src/settings.ts (line 477)",
+    "Verified test file exists at apps/server/tests/unit/services/settings-service.test.ts",
+    "Verified no tests folder exists in libs/types",
+    "Cross-referenced Claude Agent SDK documentation via Context7 to confirm MCP config format",
+    "Confirmed SDK expects { command, args, env } or { url, headers } without type discriminator"
+  ],
+  "created_at": "2025-12-23T20:30:00Z"
+}

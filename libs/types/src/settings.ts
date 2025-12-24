@@ -70,6 +70,64 @@ export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'ultrathink';
 /** ModelProvider - AI model provider for credentials and API key management */
 export type ModelProvider = 'claude';
 
+/** McpTransportType - Transport protocol used to communicate with MCP servers */
+export type McpTransportType = 'stdio' | 'http';
+
+/**
+ * StdioMcpConfig - Configuration for local process-based MCP servers
+ *
+ * Stdio transport spawns a local process and communicates via stdin/stdout.
+ * Commonly used for file system access, local tools, and development servers.
+ */
+export interface StdioMcpConfig {
+  /** Transport type discriminator */
+  type: 'stdio';
+  /** Command to execute (e.g., "npx", "node", "python") */
+  command: string;
+  /** Command arguments (e.g., ["-y", "@modelcontextprotocol/server-filesystem"]) */
+  args: string[];
+  /** Optional environment variables to pass to the process */
+  env?: Record<string, string>;
+}
+
+/**
+ * HttpMcpConfig - Configuration for remote HTTP-based MCP servers
+ *
+ * HTTP transport connects to a remote MCP server over HTTP/HTTPS.
+ * Used for cloud-hosted tools, shared services, and remote integrations.
+ */
+export interface HttpMcpConfig {
+  /** Transport type discriminator */
+  type: 'http';
+  /** Server URL (e.g., "https://mcp.example.com") */
+  url: string;
+  /** Optional custom headers (e.g., for authentication) */
+  headers?: Record<string, string>;
+}
+
+/**
+ * McpServerConfig - Complete configuration for an MCP server
+ *
+ * Represents a user-configured MCP server that can be enabled/disabled
+ * globally or on a per-task basis. Stored in global settings.
+ */
+export interface McpServerConfig {
+  /** Unique identifier for the server */
+  id: string;
+  /** Display name for the server */
+  name: string;
+  /** Optional user-friendly description */
+  description?: string;
+  /** Transport configuration (stdio or http) */
+  transport: StdioMcpConfig | HttpMcpConfig;
+  /** Whether this server is enabled by default for new tasks */
+  enabled: boolean;
+  /** ISO timestamp of when the server was created */
+  createdAt: string;
+  /** ISO timestamp of when the server was last updated */
+  updatedAt: string;
+}
+
 /**
  * WindowBounds - Electron window position and size for persistence
  *
@@ -276,6 +334,10 @@ export interface GlobalSettings {
   /** User-created AI profiles */
   aiProfiles: AIProfile[];
 
+  // MCP Server Configuration
+  /** User-configured MCP servers for tool integration */
+  mcpServers: McpServerConfig[];
+
   // Project Management
   /** List of active projects */
   projects: ProjectRef[];
@@ -430,7 +492,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
 
 /** Default global settings used when no settings file exists */
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
-  version: 1,
+  version: 2,
   theme: 'dark',
   sidebarOpen: true,
   chatHistoryOpen: false,
@@ -447,6 +509,7 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   enhancementModel: 'sonnet',
   keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
   aiProfiles: [],
+  mcpServers: [],
   projects: [],
   trashedProjects: [],
   projectHistory: [],
@@ -474,7 +537,7 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
 };
 
 /** Current version of the global settings schema */
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 /** Current version of the credentials schema */
 export const CREDENTIALS_VERSION = 1;
 /** Current version of the project settings schema */

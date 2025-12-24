@@ -104,6 +104,7 @@ export function useBoardActions({
       requirePlanApproval: boolean;
       implementationEndpointPreset?: 'default' | 'zai' | 'custom';
       implementationEndpointUrl?: string;
+      enabledMcpServers?: string[];
     }) => {
       // Empty string means "unassigned" (show only on primary worktree) - convert to undefined
       // Non-empty string is the actual branch name (for non-primary worktrees)
@@ -225,6 +226,7 @@ export function useBoardActions({
         requirePlanApproval?: boolean;
         implementationEndpointPreset?: 'default' | 'zai' | 'custom';
         implementationEndpointUrl?: string;
+        enabledMcpServers?: string[];
       }
     ) => {
       const finalBranchName = updates.branchName || undefined;

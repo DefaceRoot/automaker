@@ -1,0 +1,108 @@
+{
+  "complexity": "complex",
+  "workflow_type": "feature",
+  "confidence": 0.88,
+  "reasoning": "MCP integration requires multiple external considerations (MCP protocol spec, Claude context window management), significant infrastructure research, and cross-cutting changes across types, settings, UI dialogs, and agent services. The strict per-task isolation requirement adds architectural complexity that needs careful design.",
+
+  "analysis": {
+    "scope": {
+      "estimated_files": 15,
+      "estimated_services": 3,
+      "is_cross_cutting": true,
+      "notes": "Changes span libs/types (Feature, GlobalSettings), apps/server (settings-service, agent-service, auto-mode-service, providers), and apps/ui (add-feature-dialog, settings-view). Per-task isolation touches feature creation, agent initialization, and context loading."
+    },
+    "integrations": {
+      "external_services": ["MCP Protocol", "Claude SDK/Context Window"],
+      "new_dependencies": ["@modelcontextprotocol/sdk or similar"],
+      "research_needed": true,
+      "notes": "MCP is a standard protocol for Claude tool integration. Need to research: MCP server config format, how to dynamically load/unload MCP servers, how Claude Code manages MCP context. Must ensure strict isolation per-task."
+    },
+    "infrastructure": {
+      "docker_changes": false,
+      "database_changes": false,
+      "config_changes": true,
+      "notes": "Major config structure changes: GlobalSettings needs MCPServerConfig[], Feature needs enabledMCPServers[]. Settings file schema migration may be needed. No Docker/DB changes."
+    },
+    "knowledge": {
+      "patterns_exist": true,
+      "research_required": true,
+      "unfamiliar_tech": ["MCP Protocol", "Claude MCP server injection"],
+      "notes": "Existing patterns for settings (GlobalSettings, AIProfiles), feature toggles (model selection, planning modes), and UI dialogs (add-feature-dialog tabs). However, MCP-specific implementation patterns don't exist in codebase. Need to research MCP config format and integration points."
+    },
+    "risk": {
+      "level": "high",
+      "concerns": [
+        "MCP server isolation - disabled servers MUST NOT load into context",
+        "Parallel task interference - each task must have isolated MCP config",
+        "Context window management - incorrect injection could break agent",
+        "Provider layer complexity - may need to modify executeQuery options",
+        "Config migration for existing users"
+      ],
+      "notes": "User specifically emphasized 100% verification that disabled MCP servers don't load. This is a security/correctness-critical requirement that needs careful architecture."
+    }
+  },
+
+  "recommended_phases": [
+    "discovery",
+    "requirements",
+    "research",
+    "context",
+    "spec_writing",
+    "self_critique",
+    "planning",
+    "validation"
+  ],
+
+  "flags": {
+    "needs_research": true,
+    "needs_self_critique": true,
+    "needs_infrastructure_setup": false
+  },
+
+  "key_research_topics": [
+    "MCP Protocol specification and server configuration format",
+    "How Claude Code/SDK loads MCP servers into context",
+    "Dynamic MCP server enabling/disabling at runtime",
+    "Per-session or per-request MCP context isolation",
+    "Existing Automaker provider architecture (ProviderFactory, executeQuery)"
+  ],
+
+  "critical_integration_points": {
+    "global_config": {
+      "location": "libs/types/src/settings.ts - GlobalSettings",
+      "change": "Add mcpServers: MCPServerConfig[] array"
+    },
+    "feature_config": {
+      "location": "libs/types/src/feature.ts - Feature",
+      "change": "Add enabledMCPServers: string[] (IDs of enabled servers)"
+    },
+    "ui_add_feature": {
+      "location": "apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx",
+      "change": "Add MCP server toggle section (new tab or options section)"
+    },
+    "ui_settings": {
+      "location": "apps/ui/src/components/views/settings-view/",
+      "change": "Add MCP server management section (CRUD for global config)"
+    },
+    "agent_initialization": {
+      "location": "apps/server/src/services/auto-mode-service.ts - runAgent()",
+      "change": "Pass enabled MCP servers to executeQuery options"
+    },
+    "provider_layer": {
+      "location": "apps/server/src/providers/",
+      "change": "Handle mcpServers in ExecuteOptions, inject into SDK calls"
+    }
+  },
+
+  "validation_recommendations": {
+    "risk_level": "high",
+    "skip_validation": false,
+    "minimal_mode": false,
+    "test_types_required": ["unit", "integration", "e2e"],
+    "security_scan_required": true,
+    "staging_deployment_required": false,
+    "reasoning": "MCP isolation is security-critical per user requirements. Must verify disabled MCP servers absolutely do not load into context. Requires unit tests for config handling, integration tests for agent initialization with MCP configs, and E2E tests for the full flow from UI toggle to agent context. Security scan for potential context leakage."
+  },
+
+  "created_at": "2025-12-23T15:30:00.000Z"
+}

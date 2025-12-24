@@ -1,0 +1,2278 @@
+{
+  "project_root": "C:\\Users\\Colin\\Documents\\Projects\\automaker",
+  "project_type": "monorepo",
+  "services": {
+    "server": {
+      "name": "server",
+      "path": "C:\\Users\\Colin\\Documents\\Projects\\automaker\\apps\\server",
+      "language": "TypeScript",
+      "framework": "Express",
+      "type": "backend",
+      "package_manager": "pnpm",
+      "default_port": 3000,
+      "dev_command": "npm run dev",
+      "key_directories": {
+        "src": {
+          "path": "src",
+          "purpose": "Source code"
+        },
+        "tests": {
+          "path": "tests",
+          "purpose": "Tests"
+        }
+      },
+      "entry_point": "src/index.ts",
+      "dependencies": [
+        "@anthropic-ai/claude-agent-sdk",
+        "@automaker/dependency-resolver",
+        "@automaker/git-utils",
+        "@automaker/model-resolver",
+        "@automaker/platform",
+        "@automaker/prompts",
+        "@automaker/types",
+        "@automaker/utils",
+        "cors",
+        "dotenv",
+        "express",
+        "morgan",
+        "node-pty",
+        "ws"
+      ],
+      "dev_dependencies": [
+        "@types/cors",
+        "@types/express",
+        "@types/morgan",
+        "@types/node",
+        "@types/ws",
+        "@vitest/coverage-v8",
+        "@vitest/ui",
+        "tsx",
+        "typescript",
+        "vitest"
+      ],
+      "testing": "Vitest",
+      "test_directory": "tests",
+      "dockerfile": "Dockerfile",
+      "environment": {
+        "variables": {
+          "ANTHROPIC_API_KEY": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": true,
+            "required": true
+          },
+          "AUTOMAKER_API_KEY": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": true,
+            "required": true
+          },
+          "ALLOWED_ROOT_DIRECTORY": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": false,
+            "required": true
+          },
+          "CORS_ORIGIN": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": false,
+            "required": true
+          },
+          "PORT": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": false,
+            "required": true
+          },
+          "DATA_DIR": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": false,
+            "required": true
+          },
+          "TERMINAL_ENABLED": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": false,
+            "required": true
+          },
+          "TERMINAL_PASSWORD": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": true,
+            "required": true
+          },
+          "ENABLE_REQUEST_LOGGING": {
+            "value": null,
+            "source": ".env.example",
+            "type": "string",
+            "sensitive": false,
+            "required": true
+          }
+        },
+        "required_count": 9,
+        "optional_count": 0,
+        "detected_count": 9
+      },
+      "api": {
+        "routes": [
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\middleware\\validate-paths.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\middleware\\validate-paths.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/send",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\middleware\\validate-paths.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/start",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\agent\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/send",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\agent\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/history",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\agent\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\agent\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/clear",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\agent\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/model",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\agent\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\app-spec\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\app-spec\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate-features",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\app-spec\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\app-spec\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\app-spec\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop-feature",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/run-feature",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/verify-feature",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/resume-feature",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/context-exists",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/analyze-project",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/follow-up-feature",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/commit-feature",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/approve-plan",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\auto-mode\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/usage",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\claude\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/describe-image",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\context\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/describe-file",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\context\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\enhance-prompt\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/list",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\features\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/get",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\features\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\features\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/update",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\features\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\features\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/agent-output",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\features\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate-title",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\features\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/read",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/write",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/mkdir",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/readdir",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/exists",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stat",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/validate-path",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/resolve-directory",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/save-image",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/browse",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/image",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/save-board-background",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete-board-background",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\fs\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/diffs",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\git\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/file-diff",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\git\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/check-remote",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\github\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/issues",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\github\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/prs",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\github\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\health\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/detailed",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\health\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/available",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\models\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/providers",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\models\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\running-agents\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\sessions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\sessions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId",
+            "methods": [
+              "PUT"
+            ],
+            "file": "dist\\routes\\sessions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId/archive",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\sessions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId/unarchive",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\sessions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId",
+            "methods": [
+              "DELETE"
+            ],
+            "file": "dist\\routes\\sessions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/global",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/global",
+            "methods": [
+              "PUT"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/credentials",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/credentials",
+            "methods": [
+              "PUT"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/project",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/project",
+            "methods": [
+              "PUT"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/migrate",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\settings\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/claude-status",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/install-claude",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/auth-claude",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/store-api-key",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete-api-key",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/api-keys",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/platform",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/verify-claude-auth",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/gh-status",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\setup\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\suggestions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\suggestions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\suggestions\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/clone",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\templates\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/auth",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/logout",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions/:id",
+            "methods": [
+              "DELETE"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions/:id/resize",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/settings",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/settings",
+            "methods": [
+              "PUT"
+            ],
+            "file": "dist\\routes\\terminal\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/config",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\workspace\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/directories",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\workspace\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/info",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/list",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/diffs",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/file-diff",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/merge",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create-pr",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/pr-info",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/commit",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/push",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/pull",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/checkout-branch",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/list-branches",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/switch-branch",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/open-in-editor",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/default-editor",
+            "methods": [
+              "GET"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/init-git",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/migrate",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/start-dev",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop-dev",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/list-dev-servers",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\routes\\worktree\\index.js",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\middleware\\validate-paths.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\middleware\\validate-paths.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/send",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\middleware\\validate-paths.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/start",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\agent\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/history",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\agent\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\agent\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/clear",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\agent\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/model",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\agent\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\app-spec\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\app-spec\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate-features",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\app-spec\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\app-spec\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\app-spec\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop-feature",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\auto-mode\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\auto-mode\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/usage",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\claude\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/describe-image",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\context\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/describe-file",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\context\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\enhance-prompt\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/list",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\features\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/get",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\features\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\features\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/update",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\features\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\features\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/agent-output",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\features\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate-title",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\features\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/read",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/write",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/mkdir",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/readdir",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/exists",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stat",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/validate-path",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/resolve-directory",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/save-image",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/browse",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/image",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/save-board-background",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete-board-background",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\fs\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/diffs",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\git\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/file-diff",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\git\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/check-remote",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\github\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/issues",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\github\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/prs",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\github\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\health\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/detailed",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\health\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/available",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\models\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/providers",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\models\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\running-agents\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\sessions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\sessions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId",
+            "methods": [
+              "PUT"
+            ],
+            "file": "src\\routes\\sessions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId/archive",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\sessions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId/unarchive",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\sessions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/:sessionId",
+            "methods": [
+              "DELETE"
+            ],
+            "file": "src\\routes\\sessions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\settings\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/global",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\settings\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/global",
+            "methods": [
+              "PUT"
+            ],
+            "file": "src\\routes\\settings\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/credentials",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\settings\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/credentials",
+            "methods": [
+              "PUT"
+            ],
+            "file": "src\\routes\\settings\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/migrate",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\settings\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/claude-status",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/install-claude",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/auth-claude",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/store-api-key",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete-api-key",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/api-keys",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/platform",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/verify-claude-auth",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/verify-zai-auth",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/gh-status",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\setup\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/generate",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\suggestions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\suggestions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\suggestions\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/clone",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\templates\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/auth",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/logout",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions/:id",
+            "methods": [
+              "DELETE"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/sessions/:id/resize",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/settings",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/settings",
+            "methods": [
+              "PUT"
+            ],
+            "file": "src\\routes\\terminal\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/config",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\workspace\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/directories",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\workspace\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/info",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/status",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/list",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/diffs",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/file-diff",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create-pr",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/pr-info",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/checkout-branch",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/switch-branch",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": true
+          },
+          {
+            "path": "/open-in-editor",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/default-editor",
+            "methods": [
+              "GET"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/init-git",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/migrate",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/stop-dev",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/list-dev-servers",
+            "methods": [
+              "POST"
+            ],
+            "file": "src\\routes\\worktree\\index.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/create",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\middleware\\validate-paths.d.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/delete",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\middleware\\validate-paths.d.ts",
+            "framework": "Express",
+            "requires_auth": false
+          },
+          {
+            "path": "/send",
+            "methods": [
+              "POST"
+            ],
+            "file": "dist\\middleware\\validate-paths.d.ts",
+            "framework": "Express",
+            "requires_auth": false
+          }
+        ],
+        "total_routes": 227,
+        "methods": [
+          "GET",
+          "PUT",
+          "DELETE",
+          "POST"
+        ],
+        "protected_routes": [
+          "/auth-claude",
+          "/verify-claude-auth",
+          "/auth",
+          "/auth-claude",
+          "/verify-claude-auth",
+          "/verify-zai-auth",
+          "/auth",
+          "/checkout-branch",
+          "/switch-branch"
+        ]
+      }
+    },
+    "ui": {
+      "name": "ui",
+      "path": "C:\\Users\\Colin\\Documents\\Projects\\automaker\\apps\\ui",
+      "language": "TypeScript",
+      "framework": "React",
+      "type": "frontend",
+      "package_manager": "npm",
+      "default_port": 3000,
+      "build_tool": "Vite",
+      "styling": "Tailwind CSS",
+      "state_management": "Zustand",
+      "dev_command": "npm run dev",
+      "key_directories": {
+        "src": {
+          "path": "src",
+          "purpose": "Source code"
+        },
+        "tests": {
+          "path": "tests",
+          "purpose": "Tests"
+        }
+      },
+      "entry_point": "src/main.ts",
+      "dependencies": [
+        "@automaker/dependency-resolver",
+        "@automaker/types",
+        "@codemirror/lang-xml",
+        "@codemirror/theme-one-dark",
+        "@dnd-kit/core",
+        "@dnd-kit/sortable",
+        "@dnd-kit/utilities",
+        "@lezer/highlight",
+        "@radix-ui/react-checkbox",
+        "@radix-ui/react-dialog",
+        "@radix-ui/react-dropdown-menu",
+        "@radix-ui/react-label",
+        "@radix-ui/react-popover",
+        "@radix-ui/react-radio-group",
+        "@radix-ui/react-select",
+        "@radix-ui/react-slider",
+        "@radix-ui/react-slot",
+        "@radix-ui/react-switch",
+        "@radix-ui/react-tabs",
+        "@radix-ui/react-tooltip"
+      ],
+      "dev_dependencies": [
+        "@electron/rebuild",
+        "@eslint/js",
+        "@playwright/test",
+        "@tailwindcss/vite",
+        "@tanstack/router-plugin",
+        "@types/dagre",
+        "@types/node",
+        "@types/react",
+        "@types/react-dom",
+        "@typescript-eslint/eslint-plugin"
+      ],
+      "e2e_testing": "Playwright",
+      "test_directory": "tests",
+      "dockerfile": "Dockerfile",
+      "consumes": [
+        "server.api"
+      ]
+    }
+  },
+  "infrastructure": {
+    "docker_compose": "docker-compose.yml",
+    "docker_services": [
+      "ui",
+      "server"
+    ],
+    "ci": "GitHub Actions",
+    "ci_workflows": [
+      "claude.yml",
+      "e2e-tests.yml",
+      "format-check.yml",
+      "pr-check.yml",
+      "release.yml",
+      "security-audit.yml",
+      "test.yml"
+    ]
+  },
+  "conventions": {
+    "formatting": "Prettier",
+    "git_hooks": "Husky"
+  }
+}

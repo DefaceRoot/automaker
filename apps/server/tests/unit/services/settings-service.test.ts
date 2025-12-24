@@ -14,6 +14,7 @@ import {
   type Credentials,
   type ProjectSettings,
 } from '@/types/settings.js';
+import type { McpServerConfig } from '@automaker/types';
 
 describe('settings-service.ts', () => {
   let testDataDir: string;
@@ -606,6 +607,288 @@ describe('settings-service.ts', () => {
 
       await fs.chmod(readOnlyDir, 0o755);
       await fs.rm(readOnlyDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('MCP Server Configuration', () => {
+    it('should include empty mcpServers array in default settings', async () => {
+      const settings = await settingsService.getGlobalSettings();
+      expect(settings.mcpServers).toEqual([]);
+    });
+
+    it('should read and return existing mcpServers configuration', async () => {
+      const mcpServer: McpServerConfig = {
+        id: 'test-server-1',
+        name: 'Test MCP Server',
+        description: 'A test MCP server',
+        transport: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-test'],
+        },
+        enabled: true,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+
+      const customSettings: GlobalSettings = {
+        ...DEFAULT_GLOBAL_SETTINGS,
+        mcpServers: [mcpServer],
+      };
+      const settingsPath = path.join(testDataDir, 'settings.json');
+      await fs.writeFile(settingsPath, JSON.stringify(customSettings, null, 2));
+
+      const settings = await settingsService.getGlobalSettings();
+      expect(settings.mcpServers).toHaveLength(1);
+      expect(settings.mcpServers[0].id).toBe('test-server-1');
+      expect(settings.mcpServers[0].name).toBe('Test MCP Server');
+      expect(settings.mcpServers[0].transport.type).toBe('stdio');
+    });
+
+    it('should update mcpServers configuration', async () => {
+      const mcpServer: McpServerConfig = {
+        id: 'new-server',
+        name: 'New MCP Server',
+        transport: {
+          type: 'http',
+          url: 'https://mcp.example.com',
+        },
+        enabled: true,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+
+      const updated = await settingsService.updateGlobalSettings({
+        mcpServers: [mcpServer],
+      });
+
+      expect(updated.mcpServers).toHaveLength(1);
+      expect(updated.mcpServers[0].id).toBe('new-server');
+      expect(updated.mcpServers[0].transport.type).toBe('http');
+      if (updated.mcpServers[0].transport.type === 'http') {
+        expect(updated.mcpServers[0].transport.url).toBe('https://mcp.example.com');
+      }
+
+      const settingsPath = path.join(testDataDir, 'settings.json');
+      const fileContent = await fs.readFile(settingsPath, 'utf-8');
+      const saved = JSON.parse(fileContent);
+      expect(saved.mcpServers).toHaveLength(1);
+      expect(saved.mcpServers[0].id).toBe('new-server');
+    });
+
+    it('should preserve mcpServers when updating other settings', async () => {
+      const mcpServer: McpServerConfig = {
+        id: 'preserved-server',
+        name: 'Preserved Server',
+        transport: {
+          type: 'stdio',
+          command: 'node',
+          args: ['server.js'],
+        },
+        enabled: true,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+
+      await settingsService.updateGlobalSettings({
+        mcpServers: [mcpServer],
+      });
+
+      const updated = await settingsService.updateGlobalSettings({
+        theme: 'light',
+      });
+
+      expect(updated.theme).toBe('light');
+      expect(updated.mcpServers).toHaveLength(1);
+      expect(updated.mcpServers[0].id).toBe('preserved-server');
+    });
+
+    it('should support multiple MCP servers', async () => {
+      const stdioServer: McpServerConfig = {
+        id: 'stdio-server',
+        name: 'Stdio Server',
+        transport: {
+          type: 'stdio',
+          command: 'python',
+          args: ['mcp_server.py'],
+          env: { DEBUG: 'true' },
+        },
+        enabled: true,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+
+      const httpServer: McpServerConfig = {
+        id: 'http-server',
+        name: 'HTTP Server',
+        transport: {
+          type: 'http',
+          url: 'https://api.example.com/mcp',
+          headers: { Authorization: 'Bearer token123' },
+        },
+        enabled: false,
+        createdAt: '2024-01-02T00:00:00.000Z',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+      };
+
+      const updated = await settingsService.updateGlobalSettings({
+        mcpServers: [stdioServer, httpServer],
+      });
+
+      expect(updated.mcpServers).toHaveLength(2);
+      expect(updated.mcpServers[0].id).toBe('stdio-server');
+      expect(updated.mcpServers[0].enabled).toBe(true);
+      expect(updated.mcpServers[1].id).toBe('http-server');
+      expect(updated.mcpServers[1].enabled).toBe(false);
+    });
+
+    it('should handle MCP server with optional description', async () => {
+      const serverWithDescription: McpServerConfig = {
+        id: 'desc-server',
+        name: 'Server With Description',
+        description: 'This server provides filesystem access',
+        transport: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+        },
+        enabled: true,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+
+      const serverWithoutDescription: McpServerConfig = {
+        id: 'no-desc-server',
+        name: 'Server Without Description',
+        transport: {
+          type: 'stdio',
+          command: 'node',
+          args: ['server.js'],
+        },
+        enabled: true,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+
+      const updated = await settingsService.updateGlobalSettings({
+        mcpServers: [serverWithDescription, serverWithoutDescription],
+      });
+
+      expect(updated.mcpServers[0].description).toBe('This server provides filesystem access');
+      expect(updated.mcpServers[1].description).toBeUndefined();
+    });
+  });
+
+  describe('Settings Version Migration', () => {
+    it('should migrate v1 settings to v2 by adding mcpServers', async () => {
+      const v1Settings = {
+        version: 1,
+        theme: 'dark',
+        sidebarOpen: true,
+        chatHistoryOpen: false,
+        kanbanCardDetailLevel: 'standard',
+        maxConcurrency: 3,
+        defaultSkipTests: true,
+        enableDependencyBlocking: true,
+        useWorktrees: false,
+        showProfilesOnly: false,
+        defaultPlanningMode: 'skip',
+        defaultRequirePlanApproval: false,
+        defaultAIProfileId: null,
+        muteDoneSound: false,
+        enhancementModel: 'sonnet',
+        keyboardShortcuts: DEFAULT_GLOBAL_SETTINGS.keyboardShortcuts,
+        aiProfiles: [],
+        projects: [],
+        trashedProjects: [],
+        projectHistory: [],
+        projectHistoryIndex: -1,
+        recentFolders: [],
+        worktreePanelCollapsed: false,
+        lastSelectedSessionByProject: {},
+      };
+
+      const settingsPath = path.join(testDataDir, 'settings.json');
+      await fs.writeFile(settingsPath, JSON.stringify(v1Settings, null, 2));
+
+      const settings = await settingsService.getGlobalSettings();
+
+      expect(settings.version).toBe(SETTINGS_VERSION);
+      expect(settings.mcpServers).toEqual([]);
+      expect(settings.theme).toBe('dark');
+    });
+
+    it('should migrate settings without version field to v2', async () => {
+      const noVersionSettings = {
+        theme: 'light',
+        sidebarOpen: false,
+      };
+
+      const settingsPath = path.join(testDataDir, 'settings.json');
+      await fs.writeFile(settingsPath, JSON.stringify(noVersionSettings, null, 2));
+
+      const settings = await settingsService.getGlobalSettings();
+
+      expect(settings.version).toBe(SETTINGS_VERSION);
+      expect(settings.mcpServers).toEqual([]);
+      expect(settings.theme).toBe('light');
+      expect(settings.sidebarOpen).toBe(false);
+    });
+
+    it('should preserve existing mcpServers during v1 to v2 migration', async () => {
+      const v1SettingsWithMcp = {
+        version: 1,
+        theme: 'dark',
+        mcpServers: [
+          {
+            id: 'existing-server',
+            name: 'Existing Server',
+            transport: { type: 'stdio', command: 'node', args: ['server.js'] },
+            enabled: true,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      const settingsPath = path.join(testDataDir, 'settings.json');
+      await fs.writeFile(settingsPath, JSON.stringify(v1SettingsWithMcp, null, 2));
+
+      const settings = await settingsService.getGlobalSettings();
+
+      expect(settings.version).toBe(SETTINGS_VERSION);
+      expect(settings.mcpServers).toHaveLength(1);
+      expect(settings.mcpServers[0].id).toBe('existing-server');
+    });
+
+    it('should not re-migrate v2 settings', async () => {
+      const v2Settings: GlobalSettings = {
+        ...DEFAULT_GLOBAL_SETTINGS,
+        version: 2,
+        mcpServers: [
+          {
+            id: 'v2-server',
+            name: 'V2 Server',
+            transport: { type: 'http', url: 'https://example.com' },
+            enabled: true,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+
+      const settingsPath = path.join(testDataDir, 'settings.json');
+      await fs.writeFile(settingsPath, JSON.stringify(v2Settings, null, 2));
+
+      const settings = await settingsService.getGlobalSettings();
+
+      expect(settings.version).toBe(2);
+      expect(settings.mcpServers).toHaveLength(1);
+      expect(settings.mcpServers[0].id).toBe('v2-server');
+    });
+
+    it('should verify SETTINGS_VERSION is 2 for MCP support', () => {
+      expect(SETTINGS_VERSION).toBe(2);
     });
   });
 });
