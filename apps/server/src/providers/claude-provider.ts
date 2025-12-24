@@ -30,6 +30,7 @@ export class ClaudeProvider extends BaseProvider {
       systemPrompt,
       maxTurns = 20,
       allowedTools,
+      mcpServers,
       abortController,
       conversationHistory,
       sdkSessionId,
@@ -39,6 +40,14 @@ export class ClaudeProvider extends BaseProvider {
     // Build Claude SDK options
     const defaultTools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebSearch', 'WebFetch'];
     const toolsToUse = allowedTools || defaultTools;
+
+    // Log MCP server configuration if present
+    if (mcpServers && Object.keys(mcpServers).length > 0) {
+      const serverNames = Object.keys(mcpServers);
+      console.log(`[ClaudeProvider] Loading MCP servers: [${serverNames.join(', ')}]`);
+    } else {
+      console.log('[ClaudeProvider] No MCP servers configured for this query');
+    }
 
     const sdkOptions: Options = {
       model,
@@ -58,6 +67,8 @@ export class ClaudeProvider extends BaseProvider {
         : {}),
       // Inject environment variables if provided via providerConfig
       ...(providerConfig?.env ? { env: providerConfig.env } : {}),
+      // Pass MCP servers to SDK if configured
+      ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
     };
 
     // Build prompt payload

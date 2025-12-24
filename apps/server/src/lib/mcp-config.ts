@@ -7,13 +7,13 @@
  * - StdioMcpConfig: { type: 'stdio', command, args, env? }
  * - HttpMcpConfig: { type: 'http', url, headers? }
  *
- * SDK format auto-detects transport based on field presence (no 'type' field):
- * - Stdio: { command, args, env? }
- * - HTTP: { url, headers? }
+ * SDK format (matches @anthropic-ai/claude-agent-sdk types):
+ * - Stdio: { type?: 'stdio', command, args?, env? } - 'type' optional
+ * - HTTP: { type: 'http', url, headers? } - 'type' REQUIRED
  *
  * This utility:
  * 1. Filters MCP servers to only those explicitly enabled for a task
- * 2. Converts each config to SDK-compatible format (strips 'type' field)
+ * 2. Converts each config to SDK-compatible format
  * 3. Returns a Record<serverId, config> for direct use with Claude SDK
  */
 
@@ -22,7 +22,7 @@ import type { McpSdkConfig, StdioMcpSdkConfig, HttpMcpSdkConfig } from '../provi
 
 /**
  * Convert a stdio transport configuration to SDK format.
- * Strips the 'type' discriminator field as SDK auto-detects via 'command' presence.
+ * Note: 'type' field is optional for stdio in SDK (defaults to 'stdio').
  *
  * @param config - Stdio MCP transport configuration
  * @returns SDK-compatible stdio configuration
@@ -43,13 +43,14 @@ function convertStdioConfig(config: StdioMcpConfig): StdioMcpSdkConfig {
 
 /**
  * Convert an HTTP transport configuration to SDK format.
- * Strips the 'type' discriminator field as SDK auto-detects via 'url' presence.
+ * Note: 'type' field is REQUIRED for HTTP configs in SDK.
  *
  * @param config - HTTP MCP transport configuration
  * @returns SDK-compatible HTTP configuration
  */
 function convertHttpConfig(config: HttpMcpConfig): HttpMcpSdkConfig {
   const sdkConfig: HttpMcpSdkConfig = {
+    type: 'http',
     url: config.url,
   };
 
@@ -110,11 +111,11 @@ function convertTransportToSdk(transport: StdioMcpConfig | HttpMcpConfig): McpSd
  *   }
  * ];
  *
- * // SDK format output
+ * // SDK format output (note: 'type' omitted for stdio, required for http)
  * const result = convertMcpConfigsToSdkFormat(configs, ['fs', 'remote']);
  * // {
  * //   'fs': { command: 'npx', args: ['-y', '@mcp/server-fs'] },
- * //   'remote': { url: 'https://mcp.example.com' }
+ * //   'remote': { type: 'http', url: 'https://mcp.example.com' }
  * // }
  * ```
  */

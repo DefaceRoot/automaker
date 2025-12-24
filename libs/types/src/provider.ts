@@ -21,19 +21,23 @@ export interface ConversationMessage {
 
 /**
  * SDK-compatible MCP server configuration for stdio transport.
- * Note: Does not include 'type' field - SDK auto-detects based on 'command' presence.
+ * Matches @anthropic-ai/claude-agent-sdk McpStdioServerConfig.
+ * Note: 'type' field is optional for stdio (defaults to 'stdio').
  */
 export interface StdioMcpSdkConfig {
+  type?: 'stdio';
   command: string;
-  args: string[];
+  args?: string[];
   env?: Record<string, string>;
 }
 
 /**
  * SDK-compatible MCP server configuration for HTTP transport.
- * Note: Does not include 'type' field - SDK auto-detects based on 'url' presence.
+ * Matches @anthropic-ai/claude-agent-sdk McpHttpServerConfig.
+ * Note: 'type' field is REQUIRED for HTTP configs.
  */
 export interface HttpMcpSdkConfig {
+  type: 'http';
   url: string;
   headers?: Record<string, string>;
 }
