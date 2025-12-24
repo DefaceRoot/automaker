@@ -7,6 +7,9 @@
 export type {
   ProviderConfig,
   ConversationMessage,
+  StdioMcpSdkConfig,
+  HttpMcpSdkConfig,
+  McpSdkConfig,
   ExecuteOptions,
   ContentBlock,
   ProviderMessage,

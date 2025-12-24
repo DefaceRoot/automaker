@@ -20,6 +20,31 @@ export interface ConversationMessage {
 }
 
 /**
+ * SDK-compatible MCP server configuration for stdio transport.
+ * Note: Does not include 'type' field - SDK auto-detects based on 'command' presence.
+ */
+export interface StdioMcpSdkConfig {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * SDK-compatible MCP server configuration for HTTP transport.
+ * Note: Does not include 'type' field - SDK auto-detects based on 'url' presence.
+ */
+export interface HttpMcpSdkConfig {
+  url: string;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Union type for SDK-compatible MCP server configurations.
+ * Passed directly to Claude SDK mcpServers option.
+ */
+export type McpSdkConfig = StdioMcpSdkConfig | HttpMcpSdkConfig;
+
+/**
  * Options for executing a query via a provider
  */
 export interface ExecuteOptions {
@@ -29,7 +54,7 @@ export interface ExecuteOptions {
   systemPrompt?: string;
   maxTurns?: number;
   allowedTools?: string[];
-  mcpServers?: Record<string, unknown>;
+  mcpServers?: Record<string, McpSdkConfig>;
   abortController?: AbortController;
   conversationHistory?: ConversationMessage[]; // Previous messages for context
   sdkSessionId?: string; // Claude SDK session ID for resuming conversations
