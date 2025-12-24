@@ -1,0 +1,430 @@
+{
+  "feature": "MCP Server Integration with Two-Tier Configuration",
+  "workflow_type": "feature",
+  "workflow_rationale": "New user-facing functionality requiring changes across types, backend services, API routes, and frontend UI. Introduces MCP server configuration management with per-task isolation.",
+  "created_at": "2025-12-24T01:18:29.841Z",
+  "updated_at": "2025-12-24T01:34:43.080Z",
+  "status": "planning",
+  "planStatus": "complete",
+
+  "phases": [
+    {
+      "id": "phase-1-types",
+      "name": "Type Definitions",
+      "type": "implementation",
+      "description": "Define TypeScript interfaces for MCP server configuration in shared types library",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Add MCP server configuration types to settings.ts",
+          "service": "types",
+          "files_to_modify": ["libs/types/src/settings.ts"],
+          "files_to_create": [],
+          "patterns_from": ["libs/types/src/settings.ts"],
+          "implementation_notes": "Add StdioMcpConfig, HttpMcpConfig (discriminated union with 'type' field), and McpServerConfig interfaces. Add mcpServers: McpServerConfig[] to GlobalSettings. Increment SETTINGS_VERSION to 2. Update DEFAULT_GLOBAL_SETTINGS with mcpServers: [].",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-1-2",
+          "description": "Add enabledMcpServers field to Feature type",
+          "service": "types",
+          "files_to_modify": ["libs/types/src/feature.ts"],
+          "files_to_create": [],
+          "patterns_from": ["libs/types/src/feature.ts"],
+          "implementation_notes": "Add enabledMcpServers?: string[] field to Feature interface for storing IDs of MCP servers enabled for each task.",
+          "verification": {
+            "type": "command",
+            "command": "cd libs/types && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-1-3",
+          "description": "Type the ExecuteOptions.mcpServers field properly",
+          "service": "server",
+          "files_to_modify": ["apps/server/src/providers/types.ts"],
+          "files_to_create": [],
+          "patterns_from": ["apps/server/src/providers/types.ts"],
+          "implementation_notes": "Replace Record<string, unknown> with properly typed SDK-compatible format: Record<string, StdioMcpSdkConfig | HttpMcpSdkConfig> where StdioMcpSdkConfig = { command: string, args: string[], env?: Record<string, string> } and HttpMcpSdkConfig = { url: string, headers?: Record<string, string> }. Note: SDK format does NOT include 'type' field.",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-backend-settings",
+      "name": "Backend Settings Service",
+      "type": "implementation",
+      "description": "Extend settings service with MCP server CRUD operations and migration",
+      "depends_on": ["phase-1-types"],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "Add settings migration for version 2 with mcpServers array",
+          "service": "server",
+          "files_to_modify": ["apps/server/src/services/settings-service.ts"],
+          "files_to_create": [],
+          "patterns_from": ["apps/server/src/services/settings-service.ts"],
+          "implementation_notes": "In getGlobalSettings(), add migration logic: if settings.version < 2, add mcpServers: [] and set version = 2. Follow existing pattern of spreading DEFAULT_GLOBAL_SETTINGS for missing fields.",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npm run test -- --grep 'settings' --run",
+            "expected": "Settings tests pass"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-2-2",
+          "description": "Create MCP configuration conversion utility",
+          "service": "server",
+          "files_to_modify": [],
+          "files_to_create": ["apps/server/src/lib/mcp-config.ts"],
+          "patterns_from": ["apps/server/src/lib/sdk-options.ts"],
+          "implementation_notes": "Create utility function convertMcpConfigsToSdkFormat(configs: McpServerConfig[], enabledIds: string[]): Record<string, SdkMcpConfig> that filters to enabled servers and strips the 'type' field from transport config for SDK consumption. SDK auto-detects stdio (has 'command') vs HTTP (has 'url').",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-backend-provider",
+      "name": "Provider MCP Integration",
+      "type": "implementation",
+      "description": "Integrate MCP configuration into Claude provider execution",
+      "depends_on": ["phase-2-backend-settings"],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "Pass MCP servers to Claude SDK in provider",
+          "service": "server",
+          "files_to_modify": ["apps/server/src/providers/claude-provider.ts"],
+          "files_to_create": [],
+          "patterns_from": ["apps/server/src/providers/claude-provider.ts"],
+          "implementation_notes": "In executeQuery(), extract mcpServers from ExecuteOptions. Add mcpServers to sdkOptions object if present. Add logging to confirm which MCP servers are being passed to SDK. Log format: '[ClaudeProvider] Loading MCP servers: [server-names]'",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "Pass MCP config through auto-mode-service to provider",
+          "service": "server",
+          "files_to_modify": ["apps/server/src/services/auto-mode-service.ts"],
+          "files_to_create": [],
+          "patterns_from": ["apps/server/src/services/auto-mode-service.ts"],
+          "implementation_notes": "In runAgent() or equivalent function that calls the provider: 1) Read global MCP config from settings service. 2) Get feature's enabledMcpServers array. 3) Use convertMcpConfigsToSdkFormat() to build SDK-compatible config. 4) Pass to ExecuteOptions.mcpServers. Add logging to verify correct filtering.",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-4-frontend-store",
+      "name": "Frontend State Management",
+      "type": "implementation",
+      "description": "Add MCP settings state to Zustand store",
+      "depends_on": ["phase-1-types"],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-4-1",
+          "description": "Add MCP server state and actions to app store",
+          "service": "ui",
+          "files_to_modify": ["apps/ui/src/store/app-store.ts"],
+          "files_to_create": [],
+          "patterns_from": ["apps/ui/src/store/app-store.ts"],
+          "implementation_notes": "Add mcpServers: McpServerConfig[] to store state. Add actions: setMcpServers, addMcpServer, updateMcpServer, deleteMcpServer. Follow existing patterns for aiProfiles management. Sync with backend via settings API calls.",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/ui && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-5-frontend-settings-ui",
+      "name": "Global MCP Settings UI",
+      "type": "implementation",
+      "description": "Create settings panel for global MCP server management",
+      "depends_on": ["phase-4-frontend-store"],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-5-1",
+          "description": "Create MCP settings panel component",
+          "service": "ui",
+          "files_to_modify": [],
+          "files_to_create": ["apps/ui/src/components/settings/mcp-settings-panel.tsx"],
+          "patterns_from": ["apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx"],
+          "implementation_notes": "Create component with: 1) List of configured MCP servers with name, type badge (stdio/http), enabled toggle. 2) Add Server button opening a dialog/form. 3) Edit/Delete actions per server. 4) Form fields: name, description, transport type radio (stdio/http), conditional fields (command/args for stdio, url/headers for http), default enabled checkbox. Use Radix UI components (Switch, Dialog, Tabs).",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/ui && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-5-2",
+          "description": "Integrate MCP settings panel into settings view",
+          "service": "ui",
+          "files_to_modify": ["apps/ui/src/routes/settings.tsx"],
+          "files_to_create": [],
+          "patterns_from": ["apps/ui/src/routes/settings.tsx"],
+          "implementation_notes": "Import and render McpSettingsPanel in the settings view. Add new section/tab for 'MCP Servers' alongside existing settings sections. Follow existing layout patterns.",
+          "verification": {
+            "type": "browser",
+            "url": "http://localhost:5173/settings",
+            "checks": ["MCP settings section renders", "Server list displays", "Add button visible"]
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-6-frontend-task-dialog",
+      "name": "Per-Task MCP Selection UI",
+      "type": "implementation",
+      "description": "Add MCP server toggles to the add feature dialog",
+      "depends_on": ["phase-4-frontend-store", "phase-5-frontend-settings-ui"],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-6-1",
+          "description": "Add MCP server checkboxes to add-feature-dialog Options tab",
+          "service": "ui",
+          "files_to_modify": ["apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx"],
+          "files_to_create": [],
+          "patterns_from": ["apps/ui/src/components/views/board-view/dialogs/add-feature-dialog.tsx"],
+          "implementation_notes": "In Options tab: 1) Add state: enabledMcpServers: string[] initialized from global defaults. 2) Read mcpServers from store. 3) Render checkbox list with server names. 4) Pass enabledMcpServers to onAdd callback. If no MCP servers configured, show helpful message with link to settings.",
+          "verification": {
+            "type": "browser",
+            "url": "http://localhost:5173/",
+            "checks": ["Add feature dialog opens", "Options tab shows MCP section", "Checkboxes are toggleable"]
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-6-2",
+          "description": "Update feature creation to include enabledMcpServers",
+          "service": "ui",
+          "files_to_modify": ["apps/ui/src/components/views/board-view/board-view.tsx"],
+          "files_to_create": [],
+          "patterns_from": ["apps/ui/src/components/views/board-view/board-view.tsx"],
+          "implementation_notes": "In the onAdd handler that calls the feature creation API: include enabledMcpServers array in the feature data sent to backend. Ensure the field flows through from dialog to API call.",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/ui && npx tsc --noEmit",
+            "expected": "TypeScript compilation succeeds"
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-7-testing",
+      "name": "Testing and Verification",
+      "type": "implementation",
+      "description": "Add tests for MCP configuration and isolation",
+      "depends_on": ["phase-3-backend-provider", "phase-6-frontend-task-dialog"],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-7-1",
+          "description": "Add unit tests for settings service MCP migration",
+          "service": "server",
+          "files_to_modify": ["apps/server/tests/unit/services/settings-service.test.ts"],
+          "files_to_create": [],
+          "patterns_from": ["apps/server/tests/unit/services/settings-service.test.ts"],
+          "implementation_notes": "Add test cases: 1) Migration from v1 to v2 adds empty mcpServers array. 2) McpServerConfig CRUD operations work correctly. 3) Deep merge preserves existing mcpServers on partial updates.",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npm run test -- --grep 'settings' --run",
+            "expected": "All settings tests pass"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-7-2",
+          "description": "Add unit tests for MCP config conversion utility",
+          "service": "server",
+          "files_to_modify": [],
+          "files_to_create": ["apps/server/tests/unit/lib/mcp-config.test.ts"],
+          "patterns_from": ["apps/server/tests/unit/services/settings-service.test.ts"],
+          "implementation_notes": "Test convertMcpConfigsToSdkFormat: 1) Only enabled servers are included. 2) 'type' field is stripped from output. 3) stdio config contains command/args. 4) HTTP config contains url. 5) Empty enabledIds returns empty object.",
+          "verification": {
+            "type": "command",
+            "command": "cd apps/server && npm run test -- --grep 'mcp-config' --run",
+            "expected": "All MCP config tests pass"
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-8-integration",
+      "name": "Integration Verification",
+      "type": "integration",
+      "description": "Verify end-to-end MCP configuration flow and isolation",
+      "depends_on": ["phase-7-testing"],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-8-1",
+          "description": "End-to-end verification of MCP server isolation",
+          "all_services": true,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "implementation_notes": "Verify complete flow: 1) Add MCP server in settings. 2) Create task with server enabled - verify logs show server loaded. 3) Create task with server disabled - verify logs confirm server NOT loaded. 4) Run parallel tasks with different MCP configs - verify no cross-contamination.",
+          "verification": {
+            "type": "e2e",
+            "steps": [
+              "Start dev servers (npm run dev in apps/server and apps/ui)",
+              "Navigate to Settings -> MCP Servers",
+              "Add a test MCP server (stdio or http)",
+              "Navigate to Kanban board",
+              "Click 'Add new feature'",
+              "Toggle MCP server checkbox and create feature",
+              "Check server logs for MCP server loading message",
+              "Repeat with MCP disabled, verify log shows no MCP loaded"
+            ]
+          },
+          "status": "pending"
+        }
+      ]
+    }
+  ],
+
+  "summary": {
+    "total_phases": 8,
+    "total_subtasks": 12,
+    "services_involved": ["types", "server", "ui"],
+    "parallelism": {
+      "max_parallel_phases": 2,
+      "parallel_groups": [
+        {
+          "phases": ["phase-4-frontend-store"],
+          "reason": "Frontend store only depends on types, can run parallel with backend phases"
+        },
+        {
+          "phases": ["phase-5-frontend-settings-ui", "phase-3-backend-provider"],
+          "reason": "Both depend on completed types and their own service's prior work, no file conflicts"
+        }
+      ],
+      "recommended_workers": 2,
+      "speedup_estimate": "1.4x faster than sequential"
+    },
+    "startup_command": "source auto-claude/.venv/bin/activate && python auto-claude/run.py --spec 002 --parallel 2"
+  },
+
+  "verification_strategy": {
+    "risk_level": "high",
+    "skip_validation": false,
+    "test_creation_phase": "phase-7-testing",
+    "test_types_required": ["unit", "integration"],
+    "security_scanning_required": true,
+    "staging_deployment_required": false,
+    "acceptance_criteria": [
+      "All existing tests pass",
+      "New MCP config tests pass",
+      "MCP settings UI functional",
+      "Per-task MCP toggles work",
+      "Console logs confirm correct MCP server loading per task",
+      "Disabled MCP servers verified NOT in context"
+    ],
+    "verification_steps": [
+      {
+        "name": "TypeScript Compilation",
+        "command": "cd apps/server && npx tsc --noEmit && cd ../ui && npx tsc --noEmit",
+        "expected_outcome": "No type errors",
+        "type": "lint",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Unit Tests",
+        "command": "cd apps/server && npm run test",
+        "expected_outcome": "All tests pass",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Settings Service Tests",
+        "command": "cd apps/server && npm run test -- --grep 'settings' --run",
+        "expected_outcome": "Settings tests pass including MCP migration",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      }
+    ],
+    "reasoning": "High risk due to security-critical MCP isolation requirement. User emphasized 100% verification that disabled MCP servers don't load into context. Requires thorough unit tests for config handling and E2E verification of isolation."
+  },
+
+  "qa_acceptance": {
+    "unit_tests": {
+      "required": true,
+      "commands": ["cd apps/server && npm run test"],
+      "minimum_coverage": null
+    },
+    "integration_tests": {
+      "required": true,
+      "commands": ["cd apps/server && npm run test -- --grep 'integration'"],
+      "services_to_test": ["server"]
+    },
+    "e2e_tests": {
+      "required": false,
+      "commands": ["cd apps/ui && npx playwright test"],
+      "flows": ["mcp-settings-crud", "task-mcp-toggle"]
+    },
+    "browser_verification": {
+      "required": true,
+      "pages": [
+        {"url": "http://localhost:5173/settings", "checks": ["MCP settings panel renders", "Add/edit/delete servers works"]},
+        {"url": "http://localhost:5173/", "checks": ["Add feature dialog shows MCP toggles", "Toggles persist through creation"]}
+      ]
+    },
+    "database_verification": {
+      "required": false,
+      "checks": []
+    },
+    "log_verification": {
+      "required": true,
+      "checks": [
+        "Server logs show '[ClaudeProvider] Loading MCP servers: [...]' when enabled",
+        "Server logs confirm no MCP servers loaded when all disabled",
+        "No errors during MCP server initialization"
+      ]
+    }
+  },
+
+  "qa_signoff": null
+}
