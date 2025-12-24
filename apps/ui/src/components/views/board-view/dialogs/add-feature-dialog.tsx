@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { HotkeyButton } from '@/components/ui/hotkey-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CategoryAutocomplete } from '@/components/ui/category-autocomplete';
 import {
   DescriptionImageDropZone,
@@ -26,6 +27,7 @@ import {
   FlaskConical,
   Sparkles,
   ChevronDown,
+  Server,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getElectronAPI } from '@/lib/electron';
@@ -75,6 +77,7 @@ interface AddFeatureDialogProps {
     requirePlanApproval: boolean;
     implementationEndpointPreset?: 'default' | 'zai' | 'custom';
     implementationEndpointUrl?: string;
+    enabledMcpServers?: string[];
   }) => void;
   categorySuggestions?: string[];
   branchSuggestions?: string[];
@@ -129,6 +132,7 @@ export function AddFeatureDialog({
   >('improve');
   const [planningMode, setPlanningMode] = useState<PlanningMode>('skip');
   const [requirePlanApproval, setRequirePlanApproval] = useState(false);
+  const [enabledMcpServers, setEnabledMcpServers] = useState<string[]>([]);
 
   // Get enhancement model, planning mode defaults, and worktrees setting from store
   const {
@@ -137,6 +141,7 @@ export function AddFeatureDialog({
     defaultRequirePlanApproval,
     defaultAIProfileId,
     useWorktrees,
+    mcpServers,
   } = useAppStore();
 
   // Sync defaults when dialog opens
@@ -160,6 +165,8 @@ export function AddFeatureDialog({
       setUseCurrentBranch(true);
       setPlanningMode(defaultPlanningMode);
       setRequirePlanApproval(defaultRequirePlanApproval);
+      // Initialize enabled MCP servers from global defaults
+      setEnabledMcpServers(mcpServers.filter((s) => s.enabled).map((s) => s.id));
     }
   }, [
     open,
@@ -169,6 +176,7 @@ export function AddFeatureDialog({
     defaultRequirePlanApproval,
     defaultAIProfileId,
     aiProfiles,
+    mcpServers,
   ]);
 
   const handleAdd = () => {
@@ -211,6 +219,7 @@ export function AddFeatureDialog({
       requirePlanApproval,
       implementationEndpointPreset: newFeature.implementationEndpointPreset,
       implementationEndpointUrl: newFeature.implementationEndpointUrl,
+      enabledMcpServers,
     });
 
     // Reset form
@@ -232,6 +241,7 @@ export function AddFeatureDialog({
     setUseCurrentBranch(true);
     setPlanningMode(defaultPlanningMode);
     setRequirePlanApproval(defaultRequirePlanApproval);
+    setEnabledMcpServers(mcpServers.filter((s) => s.enabled).map((s) => s.id));
     setNewFeaturePreviewMap(new Map());
     setShowAdvancedOptions(false);
     setDescriptionError(false);
@@ -522,6 +532,71 @@ export function AddFeatureDialog({
               skipTests={newFeature.skipTests}
               onSkipTestsChange={(skipTests) => setNewFeature({ ...newFeature, skipTests })}
             />
+
+            <div className="border-t border-border my-4" />
+
+            {/* MCP Servers Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">MCP Servers</Label>
+              </div>
+              {mcpServers.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  <p>No MCP servers configured.</p>
+                  <p className="mt-1">
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-brand-500"
+                      onClick={() => {
+                        onOpenChange(false);
+                        navigate({ to: '/settings', search: { section: 'mcp' } });
+                      }}
+                    >
+                      Add MCP servers in Settings
+                    </Button>{' '}
+                    to extend Claude's capabilities.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Select which MCP servers to enable for this feature.
+                  </p>
+                  <div className="space-y-2">
+                    {mcpServers.map((server) => (
+                      <div key={server.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`mcp-${server.id}`}
+                          checked={enabledMcpServers.includes(server.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setEnabledMcpServers([...enabledMcpServers, server.id]);
+                            } else {
+                              setEnabledMcpServers(
+                                enabledMcpServers.filter((id) => id !== server.id)
+                              );
+                            }
+                          }}
+                          data-testid={`mcp-server-${server.id}`}
+                        />
+                        <Label
+                          htmlFor={`mcp-${server.id}`}
+                          className="text-sm cursor-pointer flex items-center gap-2"
+                        >
+                          {server.name}
+                          {server.description && (
+                            <span className="text-xs text-muted-foreground">
+                              — {server.description}
+                            </span>
+                          )}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
         <DialogFooter>
