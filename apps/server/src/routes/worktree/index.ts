@@ -30,8 +30,9 @@ import { createMigrateHandler } from './routes/migrate.js';
 import { createStartDevHandler } from './routes/start-dev.js';
 import { createStopDevHandler } from './routes/stop-dev.js';
 import { createListDevServersHandler } from './routes/list-dev-servers.js';
+import type { SettingsService } from '../../services/settings-service.js';
 
-export function createWorktreeRoutes(): Router {
+export function createWorktreeRoutes(settingsService?: SettingsService): Router {
   const router = Router();
 
   router.post('/info', validatePathParams('projectPath'), createInfoHandler());
@@ -45,7 +46,7 @@ export function createWorktreeRoutes(): Router {
     requireValidProject,
     createMergeHandler()
   );
-  router.post('/create', validatePathParams('projectPath'), createCreateHandler());
+  router.post('/create', validatePathParams('projectPath'), createCreateHandler(settingsService));
   router.post('/delete', validatePathParams('projectPath', 'worktreePath'), createDeleteHandler());
   router.post('/create-pr', createCreatePRHandler());
   router.post('/pr-info', createPRInfoHandler());

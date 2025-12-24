@@ -504,6 +504,10 @@ export interface AppState {
     }
   >;
 
+  // Worktree Setup Script (per-project, keyed by project path)
+  // Script that runs automatically after creating a new worktree (e.g., "npm install")
+  worktreeSetupScriptByProject: Record<string, string>;
+
   // Theme Preview (for hover preview in theme selectors)
   previewTheme: ThemeMode | null;
 
@@ -803,6 +807,10 @@ export interface AppActions {
   setHideScrollbar: (projectPath: string, hide: boolean) => void;
   clearBoardBackground: (projectPath: string) => void;
 
+  // Worktree Setup Script actions
+  setWorktreeSetupScript: (projectPath: string, script: string) => void;
+  getWorktreeSetupScript: (projectPath: string) => string;
+
   // Terminal actions
   setTerminalUnlocked: (unlocked: boolean, token?: string) => void;
   setActiveTerminalSession: (sessionId: string | null) => void;
@@ -949,6 +957,7 @@ const initialState: AppState = {
   projectAnalysis: null,
   isAnalyzing: false,
   boardBackgroundByProject: {},
+  worktreeSetupScriptByProject: {},
   previewTheme: null,
   terminalState: {
     isUnlocked: false,
@@ -1808,6 +1817,21 @@ export const useAppStore = create<AppState & AppActions>()(
             },
           },
         });
+      },
+
+      // Worktree Setup Script actions
+      setWorktreeSetupScript: (projectPath, script) => {
+        const current = get().worktreeSetupScriptByProject;
+        set({
+          worktreeSetupScriptByProject: {
+            ...current,
+            [projectPath]: script,
+          },
+        });
+      },
+
+      getWorktreeSetupScript: (projectPath) => {
+        return get().worktreeSetupScriptByProject[projectPath] || '';
       },
 
       // Terminal actions
@@ -2766,6 +2790,8 @@ export const useAppStore = create<AppState & AppActions>()(
           lastSelectedSessionByProject: state.lastSelectedSessionByProject,
           // Board background settings
           boardBackgroundByProject: state.boardBackgroundByProject,
+          // Worktree setup script (per-project)
+          worktreeSetupScriptByProject: state.worktreeSetupScriptByProject,
           // Terminal layout persistence (per-project)
           terminalLayoutByProject: state.terminalLayoutByProject,
           // Terminal settings persistence (global)

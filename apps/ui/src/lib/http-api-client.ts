@@ -206,6 +206,19 @@ export class HttpApiClient implements ElectronAPI {
     return { success: true };
   }
 
+  async openDevServerPreview(
+    url: string,
+    title?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    // Use native Electron API if available (we're in Electron)
+    if (typeof window !== 'undefined' && window.electronAPI?.openDevServerPreview) {
+      return window.electronAPI.openDevServerPreview(url, title);
+    }
+    // Fallback to browser for web mode
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return { success: true };
+  }
+
   async openInEditor(
     filePath: string,
     line?: number,
@@ -960,6 +973,7 @@ export class HttpApiClient implements ElectronAPI {
           hideScrollbar: boolean;
         };
         lastSelectedSessionId?: string;
+        worktreeSetupScript?: string;
       };
       error?: string;
     }> => this.post('/api/settings/project', { projectPath }),

@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
+import { syncProjectSettingsToServer } from '@/hooks/use-settings-migration';
+import { getHttpApiClient } from '@/lib/http-api-client';
 
 import { useCliStatus, useSettingsView } from './settings-view/hooks';
 import { NAV_ITEMS } from './settings-view/config/navigation';
@@ -48,7 +50,42 @@ export function SettingsView() {
     apiKeys,
     validationModel,
     setValidationModel,
+    getWorktreeSetupScript,
+    setWorktreeSetupScript,
   } = useAppStore();
+
+  // Get the worktree setup script for the current project
+  const worktreeSetupScript = currentProject ? getWorktreeSetupScript(currentProject.path) : '';
+
+  // Load worktree setup script from server when project changes
+  useEffect(() => {
+    if (!currentProject) return;
+
+    const loadProjectSettings = async () => {
+      try {
+        const api = getHttpApiClient();
+        const result = await api.settings.getProject(currentProject.path);
+        if (result.success && result.settings?.worktreeSetupScript !== undefined) {
+          setWorktreeSetupScript(currentProject.path, result.settings.worktreeSetupScript);
+        }
+      } catch (error) {
+        console.error('[Settings] Failed to load project settings:', error);
+      }
+    };
+
+    loadProjectSettings();
+  }, [currentProject, setWorktreeSetupScript]);
+
+  // Handler for updating worktree setup script (persists to server)
+  const handleWorktreeSetupScriptChange = useCallback(
+    (script: string) => {
+      if (!currentProject) return;
+      setWorktreeSetupScript(currentProject.path, script);
+      // Also sync to server for persistence
+      syncProjectSettingsToServer(currentProject.path, { worktreeSetupScript: script });
+    },
+    [currentProject, setWorktreeSetupScript]
+  );
 
   // Hide usage tracking when using API key (only show for Claude Code CLI users)
   // Also hide on Windows for now (CLI usage command not supported)
@@ -140,6 +177,8 @@ export function SettingsView() {
             defaultAIProfileId={defaultAIProfileId}
             aiProfiles={aiProfiles}
             validationModel={validationModel}
+            worktreeSetupScript={worktreeSetupScript}
+            hasProject={!!currentProject}
             onShowProfilesOnlyChange={setShowProfilesOnly}
             onDefaultSkipTestsChange={setDefaultSkipTests}
             onEnableDependencyBlockingChange={setEnableDependencyBlocking}
@@ -148,6 +187,7 @@ export function SettingsView() {
             onDefaultRequirePlanApprovalChange={setDefaultRequirePlanApproval}
             onDefaultAIProfileIdChange={setDefaultAIProfileId}
             onValidationModelChange={setValidationModel}
+            onWorktreeSetupScriptChange={handleWorktreeSetupScriptChange}
           />
         );
       case 'danger':

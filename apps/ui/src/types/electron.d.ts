@@ -447,6 +447,10 @@ export interface AutoModeAPI {
 export interface ElectronAPI {
   ping: () => Promise<string>;
   openExternalLink: (url: string) => Promise<{ success: boolean; error?: string }>;
+  openDevServerPreview: (
+    url: string,
+    title?: string
+  ) => Promise<{ success: boolean; error?: string }>;
 
   // Dialog APIs
   openDirectory: () => Promise<{

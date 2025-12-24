@@ -413,6 +413,10 @@ export interface SaveImageResult {
 export interface ElectronAPI {
   ping: () => Promise<string>;
   openExternalLink: (url: string) => Promise<{ success: boolean; error?: string }>;
+  openDevServerPreview?: (
+    url: string,
+    title?: string
+  ) => Promise<{ success: boolean; error?: string }>;
   openDirectory: () => Promise<DialogResult>;
   openFile: (options?: object) => Promise<DialogResult>;
   readFile: (filePath: string) => Promise<FileResult>;

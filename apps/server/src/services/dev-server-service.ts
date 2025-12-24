@@ -152,21 +152,56 @@ class DevServerService {
   }
 
   /**
+   * Check if this is an Automaker project (has init.mjs with interactive prompt)
+   */
+  private async isAutomakerProject(dir: string): Promise<boolean> {
+    try {
+      const initPath = path.join(dir, 'init.mjs');
+      if (await this.fileExists(initPath)) {
+        const content = await secureFs.readFile(initPath, 'utf-8');
+        // Check if it's the Automaker init script
+        return (
+          content.includes('Automaker Development Environment') ||
+          content.includes('Select Application Mode')
+        );
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Get the dev script command for a directory
    */
   private async getDevCommand(dir: string): Promise<{ cmd: string; args: string[] } | null> {
     const pm = await this.detectPackageManager(dir);
     if (!pm) return null;
 
+    // Check if this is an Automaker project that needs special handling
+    const isAutomaker = await this.isAutomakerProject(dir);
+
     switch (pm) {
       case 'bun':
+        if (isAutomaker) {
+          return { cmd: 'bun', args: ['run', 'dev', '--', '--web', '--skip-setup'] };
+        }
         return { cmd: 'bun', args: ['run', 'dev'] };
       case 'pnpm':
+        if (isAutomaker) {
+          return { cmd: 'pnpm', args: ['run', 'dev', '--', '--web', '--skip-setup'] };
+        }
         return { cmd: 'pnpm', args: ['run', 'dev'] };
       case 'yarn':
+        if (isAutomaker) {
+          return { cmd: 'yarn', args: ['dev', '--web', '--skip-setup'] };
+        }
         return { cmd: 'yarn', args: ['dev'] };
       case 'npm':
       default:
+        if (isAutomaker) {
+          return { cmd: 'npm', args: ['run', 'dev', '--', '--web', '--skip-setup'] };
+        }
         return { cmd: 'npm', args: ['run', 'dev'] };
     }
   }
@@ -218,6 +253,20 @@ class DevServerService {
       };
     }
 
+    // Check for node_modules (dependencies need to be installed)
+    const nodeModulesPath = path.join(worktreePath, 'node_modules');
+    if (!(await this.fileExists(nodeModulesPath))) {
+      const pm = await this.detectPackageManager(worktreePath);
+      const installCmd = pm === 'yarn' ? 'yarn' : pm === 'pnpm' ? 'pnpm install' : 'npm install';
+      return {
+        success: false,
+        error: `Dependencies not installed. Please run '${installCmd}' in the worktree directory first: ${worktreePath}`,
+      };
+    }
+
+    // Check if this is an Automaker project (uses fixed ports)
+    const isAutomaker = await this.isAutomakerProject(worktreePath);
+
     // Get dev command
     const devCommand = await this.getDevCommand(worktreePath);
     if (!devCommand) {
@@ -227,15 +276,25 @@ class DevServerService {
       };
     }
 
-    // Find available port
+    // Determine port: Automaker uses fixed port 3007 for web UI, others get dynamic allocation
     let port: number;
-    try {
-      port = await this.findAvailablePort();
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Port allocation failed',
-      };
+    if (isAutomaker) {
+      // Automaker uses port 3007 for Vite and 3008 for API server
+      port = 3007;
+      // Kill any existing processes on Automaker ports
+      this.killProcessOnPort(3007);
+      this.killProcessOnPort(3008);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } else {
+      // Find available port for other projects
+      try {
+        port = await this.findAvailablePort();
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Port allocation failed',
+        };
+      }
     }
 
     // Reserve the port (port was already force-killed in findAvailablePort)
@@ -251,13 +310,15 @@ class DevServerService {
     // Small delay to ensure related ports are freed
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    console.log(`[DevServerService] Starting dev server on port ${port}`);
+    console.log(
+      `[DevServerService] Starting dev server on port ${port}${isAutomaker ? ' (Automaker project)' : ''}`
+    );
     console.log(`[DevServerService] Working directory (cwd): ${worktreePath}`);
     console.log(
-      `[DevServerService] Command: ${devCommand.cmd} ${devCommand.args.join(' ')} with PORT=${port}`
+      `[DevServerService] Command: ${devCommand.cmd} ${devCommand.args.join(' ')}${isAutomaker ? '' : ` with PORT=${port}`}`
     );
 
-    // Spawn the dev process with PORT environment variable
+    // Spawn the dev process with PORT environment variable (ignored by Automaker)
     const env = {
       ...process.env,
       PORT: String(port),
@@ -268,6 +329,8 @@ class DevServerService {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
+      // On Windows, npm/yarn/pnpm are .cmd batch files that require a shell
+      shell: process.platform === 'win32',
     });
 
     // Track if process failed early using object to work around TypeScript narrowing

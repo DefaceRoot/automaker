@@ -302,6 +302,7 @@ export async function syncProjectSettingsToServer(
       hasChanges?: boolean;
       changedFilesCount?: number;
     }>;
+    worktreeSetupScript?: string;
   }
 ): Promise<boolean> {
   if (!isElectron()) return false;

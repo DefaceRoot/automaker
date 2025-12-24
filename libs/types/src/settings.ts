@@ -502,6 +502,8 @@ export interface ProjectSettings {
   currentWorktree?: { path: string | null; branch: string };
   /** List of worktrees available in this project */
   worktrees?: WorktreeInfo[];
+  /** Script to run after creating a new worktree (e.g., "npm install") */
+  worktreeSetupScript?: string;
 
   // Board Customization
   /** Project-specific board background settings */

@@ -21,6 +21,7 @@ import {
   MessageSquare,
   GitMerge,
   AlertCircle,
+  AppWindow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorktreeInfo, DevServerInfo, PRInfo, GitRepoStatus } from '../types';
@@ -50,6 +51,7 @@ interface WorktreeActionsDropdownProps {
   onStartDevServer: (worktree: WorktreeInfo) => void;
   onStopDevServer: (worktree: WorktreeInfo) => void;
   onOpenDevServerUrl: (worktree: WorktreeInfo) => void;
+  onOpenDevServerInElectron: (worktree: WorktreeInfo) => void;
 }
 
 export function WorktreeActionsDropdown({
@@ -76,6 +78,7 @@ export function WorktreeActionsDropdown({
   onStartDevServer,
   onStopDevServer,
   onOpenDevServerUrl,
+  onOpenDevServerInElectron,
 }: WorktreeActionsDropdownProps) {
   // Check if there's a PR associated with this worktree from stored metadata
   const hasPR = !!worktree.pr;
@@ -120,6 +123,13 @@ export function WorktreeActionsDropdown({
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               Dev Server Running (:{devServerInfo?.port})
             </DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => onOpenDevServerInElectron(worktree)}
+              className="text-xs"
+            >
+              <AppWindow className="w-3.5 h-3.5 mr-2" />
+              Open in Electron
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onOpenDevServerUrl(worktree)} className="text-xs">
               <Globe className="w-3.5 h-3.5 mr-2" />
               Open in Browser

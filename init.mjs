@@ -268,9 +268,32 @@ async function cleanup() {
 }
 
 /**
+ * Parse command line arguments
+ */
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const result = { mode: null, skipSetup: false };
+
+  for (const arg of args) {
+    if (arg === '--mode=web' || arg === '--web' || arg === '-w') {
+      result.mode = '1';
+    } else if (arg === '--mode=electron' || arg === '--electron' || arg === '-e') {
+      result.mode = '2';
+    } else if (arg === '--skip-setup') {
+      result.skipSetup = true;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Main function
  */
 async function main() {
+  // Parse CLI arguments for non-interactive mode
+  const cliArgs = parseArgs();
+
   // Change to script directory
   process.chdir(__dirname);
 
@@ -288,40 +311,34 @@ async function main() {
     });
   }
 
-  // Install Playwright browsers from apps/ui where @playwright/test is installed
-  log('Checking Playwright browsers...', 'yellow');
-  try {
-    const exitCode = await new Promise((resolve) => {
-      const playwright = crossSpawn('npx', ['playwright', 'install', 'chromium'], {
-        stdio: 'inherit',
-        cwd: path.join(__dirname, 'apps', 'ui'),
+  // Skip Playwright setup if --skip-setup flag is provided (useful for dev server mode)
+  if (!cliArgs.skipSetup) {
+    // Install Playwright browsers from apps/ui where @playwright/test is installed
+    log('Checking Playwright browsers...', 'yellow');
+    try {
+      const exitCode = await new Promise((resolve) => {
+        const playwright = crossSpawn('npx', ['playwright', 'install', 'chromium'], {
+          stdio: 'inherit',
+          cwd: path.join(__dirname, 'apps', 'ui'),
+        });
+        playwright.on('close', (code) => resolve(code));
+        playwright.on('error', () => resolve(1));
       });
-      playwright.on('close', (code) => resolve(code));
-      playwright.on('error', () => resolve(1));
-    });
 
-    if (exitCode === 0) {
-      log('Playwright browsers ready', 'green');
-    } else {
-      log('Playwright installation failed (browser automation may not work)', 'yellow');
+      if (exitCode === 0) {
+        log('Playwright browsers ready', 'green');
+      } else {
+        log('Playwright installation failed (browser automation may not work)', 'yellow');
+      }
+    } catch {
+      log('Playwright installation skipped', 'yellow');
     }
-  } catch {
-    log('Playwright installation skipped', 'yellow');
   }
 
   // Kill any existing processes on required ports
   log('Checking for processes on ports 3007 and 3008...', 'yellow');
   await killPort(3007);
   await killPort(3008);
-  console.log('');
-
-  // Show menu
-  console.log('═══════════════════════════════════════════════════════');
-  console.log('  Select Application Mode:');
-  console.log('═══════════════════════════════════════════════════════');
-  console.log('  1) Web Application (Browser)');
-  console.log('  2) Desktop Application (Electron)');
-  console.log('═══════════════════════════════════════════════════════');
   console.log('');
 
   // Setup cleanup handlers
@@ -336,9 +353,23 @@ async function main() {
   process.on('SIGINT', () => handleExit('SIGINT'));
   process.on('SIGTERM', () => handleExit('SIGTERM'));
 
-  // Prompt for choice
+  // If mode was provided via CLI, use it directly
+  if (cliArgs.mode) {
+    log(`Using mode from CLI argument: ${cliArgs.mode === '1' ? 'Web' : 'Electron'}`, 'blue');
+  } else {
+    // Show menu for interactive mode
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('  Select Application Mode:');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('  1) Web Application (Browser)');
+    console.log('  2) Desktop Application (Electron)');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('');
+  }
+
+  // Prompt for choice (or use CLI arg)
   while (true) {
-    const choice = await prompt('Enter your choice (1 or 2): ');
+    const choice = cliArgs.mode || await prompt('Enter your choice (1 or 2): ');
 
     if (choice === '1') {
       console.log('');

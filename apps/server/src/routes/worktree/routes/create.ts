@@ -5,12 +5,14 @@
  * 1. First checks if git already has a worktree for the branch (anywhere)
  * 2. If found, returns the existing worktree (no error)
  * 3. Only creates a new worktree if none exists for the branch
+ * 4. Optionally runs a setup script (e.g., npm install) after creation
  */
 
 import type { Request, Response } from 'express';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import os from 'os';
 import * as secureFs from '../../../lib/secure-fs.js';
 import {
   isGitRepo,
@@ -20,8 +22,75 @@ import {
   ensureInitialCommit,
 } from '../common.js';
 import { trackBranch } from './branch-tracking.js';
+import type { SettingsService } from '../../../services/settings-service.js';
 
 const execAsync = promisify(exec);
+
+/**
+ * Run the worktree setup script in the given directory
+ * Returns a promise that resolves when the script completes
+ */
+async function runSetupScript(
+  worktreePath: string,
+  script: string
+): Promise<{ success: boolean; output?: string; error?: string }> {
+  return new Promise((resolve) => {
+    console.log(`[Worktree] Running setup script in ${worktreePath}: ${script}`);
+
+    const isWindows = os.platform() === 'win32';
+    const shell = isWindows ? 'cmd.exe' : '/bin/sh';
+    const shellArgs = isWindows ? ['/c', script] : ['-c', script];
+
+    const proc = spawn(shell, shellArgs, {
+      cwd: worktreePath,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    if (proc.stdout) {
+      proc.stdout.on('data', (data: Buffer) => {
+        const text = data.toString();
+        stdout += text;
+        console.log(`[Worktree Setup] ${text.trim()}`);
+      });
+    }
+
+    if (proc.stderr) {
+      proc.stderr.on('data', (data: Buffer) => {
+        const text = data.toString();
+        stderr += text;
+        console.error(`[Worktree Setup] ${text.trim()}`);
+      });
+    }
+
+    proc.on('error', (error) => {
+      console.error(`[Worktree] Setup script failed to start:`, error);
+      resolve({ success: false, error: error.message });
+    });
+
+    proc.on('exit', (code) => {
+      if (code === 0) {
+        console.log(`[Worktree] Setup script completed successfully`);
+        resolve({ success: true, output: stdout });
+      } else {
+        console.error(`[Worktree] Setup script exited with code ${code}`);
+        resolve({ success: false, error: stderr || `Exit code: ${code}` });
+      }
+    });
+
+    // Timeout after 5 minutes to prevent hanging
+    setTimeout(
+      () => {
+        proc.kill('SIGTERM');
+        resolve({ success: false, error: 'Setup script timed out after 5 minutes' });
+      },
+      5 * 60 * 1000
+    );
+  });
+}
 
 /**
  * Find an existing worktree for a given branch by checking git worktree list
@@ -74,7 +143,7 @@ async function findExistingWorktreeForBranch(
   }
 }
 
-export function createCreateHandler() {
+export function createCreateHandler(settingsService?: SettingsService) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
       const { projectPath, branchName, baseBranch } = req.body as {
@@ -155,7 +224,23 @@ export function createCreateHandler() {
         createCmd = `git worktree add -b ${branchName} "${worktreePath}" ${base}`;
       }
 
+      console.log(
+        `[Worktree] Creating worktree: projectPath="${projectPath}", worktreePath="${worktreePath}"`
+      );
+      console.log(`[Worktree] Command: ${createCmd}`);
+
       await execAsync(createCmd, { cwd: projectPath });
+
+      // Verify the worktree was actually created with files
+      // If the directory is empty or missing expected files, the git repo might be invalid
+      const worktreeFiles = await secureFs.readdir(worktreePath);
+      if (worktreeFiles.length === 0) {
+        console.warn(
+          `[Worktree] Warning: Worktree directory is empty! This might indicate the git repo at "${projectPath}" has no commits or is invalid.`
+        );
+      } else {
+        console.log(`[Worktree] Worktree created successfully with ${worktreeFiles.length} items`);
+      }
 
       // Note: We intentionally do NOT symlink .automaker to worktrees
       // Features and config are always accessed from the main project path
@@ -167,6 +252,30 @@ export function createCreateHandler() {
       // Resolve to absolute path for cross-platform compatibility
       // normalizePath converts to forward slashes for API consistency
       const absoluteWorktreePath = path.resolve(worktreePath);
+
+      // Run worktree setup script if configured
+      // Only run if the worktree has actual files (not an empty directory)
+      let setupScriptResult: { success: boolean; output?: string; error?: string } | undefined;
+      if (settingsService && worktreeFiles.length > 0) {
+        try {
+          const projectSettings = await settingsService.getProjectSettings(projectPath);
+          if (projectSettings.worktreeSetupScript) {
+            console.log(
+              `[Worktree] Found setup script for project: ${projectSettings.worktreeSetupScript}`
+            );
+            setupScriptResult = await runSetupScript(
+              absoluteWorktreePath,
+              projectSettings.worktreeSetupScript
+            );
+          }
+        } catch (error) {
+          console.error('[Worktree] Failed to get project settings for setup script:', error);
+          // Don't fail worktree creation if settings can't be read
+        }
+      } else if (settingsService && worktreeFiles.length === 0) {
+        console.warn('[Worktree] Skipping setup script because worktree directory is empty');
+      }
+
       res.json({
         success: true,
         worktree: {
@@ -174,6 +283,7 @@ export function createCreateHandler() {
           branch: branchName,
           isNew: !branchExists,
         },
+        setupScript: setupScriptResult,
       });
     } catch (error) {
       logError(error, 'Create worktree failed');

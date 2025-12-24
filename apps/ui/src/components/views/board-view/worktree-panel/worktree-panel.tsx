@@ -49,6 +49,7 @@ export function WorktreePanel({
     handleStartDevServer,
     handleStopDevServer,
     handleOpenDevServerUrl,
+    handleOpenDevServerInElectron,
   } = useDevServers({ projectPath });
 
   const {
@@ -229,6 +230,7 @@ export function WorktreePanel({
             onStartDevServer={handleStartDevServer}
             onStopDevServer={handleStopDevServer}
             onOpenDevServerUrl={handleOpenDevServerUrl}
+            onOpenDevServerInElectron={handleOpenDevServerInElectron}
           />
         )}
       </div>
@@ -284,6 +286,7 @@ export function WorktreePanel({
                   onStartDevServer={handleStartDevServer}
                   onStopDevServer={handleStopDevServer}
                   onOpenDevServerUrl={handleOpenDevServerUrl}
+                  onOpenDevServerInElectron={handleOpenDevServerInElectron}
                 />
               );
             })}
