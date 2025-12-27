@@ -56,6 +56,8 @@ export interface SystemPromptPreset {
   preset: 'claude_code';
   append?: string;
 }
+
+/**
  * Options for executing a query via a provider
  */
 export interface ExecuteOptions {

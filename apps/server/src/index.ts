@@ -50,6 +50,7 @@ import { createGitHubRoutes } from './routes/github/index.js';
 import { createContextRoutes } from './routes/context/index.js';
 import { createBacklogPlanRoutes } from './routes/backlog-plan/index.js';
 import { cleanupStaleValidations } from './routes/github/routes/validation-common.js';
+import { getMcpServerManager } from './services/mcp-server-manager.js';
 
 // Load environment variables
 dotenv.config();
@@ -464,20 +465,27 @@ const startServer = (port: number) => {
 startServer(PORT);
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down...');
-  terminalService.cleanup();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+const gracefulShutdown = async (signal: string) => {
+  console.log(`${signal} received, shutting down...`);
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down...');
+  // Cleanup terminal service
   terminalService.cleanup();
+
+  // Disconnect all MCP servers
+  try {
+    const mcpManager = getMcpServerManager();
+    await mcpManager.disconnectAll();
+    console.log('[Server] MCP servers disconnected');
+  } catch (error) {
+    console.error('[Server] Error disconnecting MCP servers:', error);
+  }
+
+  // Close HTTP server
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
   });
-});
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
