@@ -9,4 +9,5 @@ const logger = createLogger('Features');
 
 // Re-export shared utilities
 export { getErrorMessageShared as getErrorMessage };
+export { createLogger };
 export const logError = createLogError(logger);
