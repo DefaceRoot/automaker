@@ -11,6 +11,7 @@ import { createListHandler } from './routes/list.js';
 import { createDiffsHandler } from './routes/diffs.js';
 import { createFileDiffHandler } from './routes/file-diff.js';
 import { createMergeHandler } from './routes/merge.js';
+import { createMergePreviewHandler } from './routes/merge-preview.js';
 import { createCreateHandler } from './routes/create.js';
 import { createDeleteHandler } from './routes/delete.js';
 import { createCreatePRHandler } from './routes/create-pr.js';
@@ -47,6 +48,12 @@ export function createWorktreeRoutes(settingsService?: SettingsService): Router 
     validatePathParams('projectPath'),
     requireValidProject,
     createMergeHandler()
+  );
+  router.post(
+    '/merge-preview',
+    validatePathParams('projectPath'),
+    requireValidProject,
+    createMergePreviewHandler()
   );
   router.post(
     '/stage',
