@@ -36,6 +36,7 @@ import { convertMcpConfigsToSdkFormat } from '../lib/mcp-config.js';
 import type { SettingsService } from './settings-service.js';
 import { getAutoLoadClaudeMdSetting, filterClaudeMdFromContext } from '../lib/settings-helpers.js';
 import { getMcpTaskIsolationService, type TaskMcpContext } from './mcp-task-isolation.js';
+import { worktreeLifecycleService } from './worktree-lifecycle.js';
 
 const execAsync = promisify(exec);
 
@@ -359,6 +360,72 @@ export class AutoModeService {
   }
 
   /**
+   * Get list of modified/untracked files from git status
+   * Returns array of relative file paths
+   */
+  private async getModifiedFiles(workDir: string): Promise<string[]> {
+    try {
+      const { stdout: status } = await execAsync('git status --porcelain', {
+        cwd: workDir,
+      });
+      if (!status.trim()) {
+        return [];
+      }
+      // Parse git status output - format is "XY filename" where XY is status codes
+      return status
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.slice(3).trim()) // Skip status codes and get filename
+        .filter((file) => file.length > 0);
+    } catch (error) {
+      console.error('[AutoMode] Failed to get modified files:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Track files modified by a task execution
+   * Compares files before and after execution and stores the difference
+   */
+  private async trackTaskModifiedFiles(
+    projectPath: string,
+    featureId: string,
+    filesBeforeExecution: string[],
+    workDir: string
+  ): Promise<void> {
+    try {
+      // Get files after execution
+      const filesAfterExecution = await this.getModifiedFiles(workDir);
+
+      // Calculate files that were modified by this task
+      // New files = files in after that weren't in before
+      // Modified files = all files in after (since we're looking at modified files from git status)
+      const beforeSet = new Set(filesBeforeExecution);
+      const taskModifiedFiles = filesAfterExecution.filter((file) => !beforeSet.has(file));
+
+      // Also include files that were already modified but might have additional changes
+      // For simplicity, track all files that are currently modified
+      // The key insight is: if a file was modified BEFORE this task started,
+      // it belongs to a previous task, not this one
+      const trackedFiles = taskModifiedFiles;
+
+      if (trackedFiles.length > 0) {
+        console.log(`[AutoMode] Task ${featureId} modified ${trackedFiles.length} files:`, trackedFiles);
+
+        // Update feature with tracked files
+        await this.featureLoader.update(projectPath, featureId, {
+          trackedFiles,
+        });
+      } else {
+        console.log(`[AutoMode] Task ${featureId} did not modify any new files`);
+      }
+    } catch (error) {
+      console.error(`[AutoMode] Failed to track modified files for ${featureId}:`, error);
+      // Don't throw - this is a non-critical feature
+    }
+  }
+
+  /**
    * Start the auto mode loop - continuously picks and executes pending features
    */
   async startAutoLoop(projectPath: string, maxConcurrency = 3): Promise<void> {
@@ -616,6 +683,10 @@ export class AutoModeService {
       console.log(`[AutoMode] Executing feature ${featureId} in ${workDir}`);
       console.log(`[AutoMode] Planning model: ${planningModel}`);
       console.log(`[AutoMode] Implementation model: ${implementationModel}`);
+
+      // Capture file state BEFORE execution for tracking task-specific changes
+      const filesBeforeExecution = await this.getModifiedFiles(workDir);
+      console.log(`[AutoMode] Files before execution: ${filesBeforeExecution.length} modified`);
 
       // Two-phase execution: planning model generates plan, implementation model executes
       // For now, use the same single-phase flow but with proper model selection
