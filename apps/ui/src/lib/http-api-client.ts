@@ -1203,9 +1203,10 @@ export class HttpApiClient implements ElectronAPI {
           removedDependencies: string[];
           addedDependencies: string[];
         }>;
-      }
+      },
+      targetBranch?: string
     ): Promise<{ success: boolean; appliedChanges?: string[]; error?: string }> =>
-      this.post('/api/backlog-plan/apply', { projectPath, plan }),
+      this.post('/api/backlog-plan/apply', { projectPath, plan, targetBranch }),
 
     onEvent: (callback: (data: unknown) => void): (() => void) => {
       return this.subscribeToEvent('backlog-plan:event', callback as EventCallback);
