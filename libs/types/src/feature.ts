@@ -45,6 +45,7 @@ export interface Feature {
   planningMode?: PlanningMode;
   enabledMcpServers?: string[]; // IDs of MCP servers enabled for this task
   requirePlanApproval?: boolean;
+  trackedFiles?: string[]; // Files modified by this specific task (relative paths)
   planSpec?: {
     status: 'pending' | 'generating' | 'generated' | 'approved' | 'rejected';
     content?: string;
