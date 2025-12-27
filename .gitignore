@@ -17,6 +17,10 @@ out/
 /.automaker/*
 /.automaker/
 
+# AI Assistant directories
+.auto-claude/
+.serena/
+
 .worktrees/
 
 /logs
