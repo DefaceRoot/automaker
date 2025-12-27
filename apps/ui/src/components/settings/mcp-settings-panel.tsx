@@ -54,6 +54,7 @@ interface McpServerFormData {
   headers: string;
   // Common
   enabled: boolean;
+  customPrompt: string;
 }
 
 const DEFAULT_FORM_DATA: McpServerFormData = {
@@ -66,6 +67,7 @@ const DEFAULT_FORM_DATA: McpServerFormData = {
   url: '',
   headers: '',
   enabled: true,
+  customPrompt: '',
 };
 
 function StatusIndicator({ testResult }: { testResult?: McpTestResult }) {
@@ -201,6 +203,7 @@ export function McpSettingsPanel() {
               .join('\n')
           : '',
       enabled: server.enabled,
+      customPrompt: server.customPrompt || '',
     });
     setDialogOpen(true);
   };
@@ -320,6 +323,7 @@ export function McpSettingsPanel() {
         description: formData.description.trim() || undefined,
         transport,
         enabled: formData.enabled,
+        customPrompt: formData.customPrompt.trim() || undefined,
       };
     } else {
       if (!formData.url.trim()) {
@@ -353,6 +357,7 @@ export function McpSettingsPanel() {
         description: formData.description.trim() || undefined,
         transport,
         enabled: formData.enabled,
+        customPrompt: formData.customPrompt.trim() || undefined,
       };
     }
 
@@ -901,6 +906,24 @@ export function McpSettingsPanel() {
                   setFormData((prev) => ({ ...prev, enabled: checked }))
                 }
               />
+            </div>
+
+            {/* Custom Prompt */}
+            <div className="space-y-2">
+              <Label htmlFor="customPrompt">Custom Instructions (optional)</Label>
+              <Textarea
+                id="customPrompt"
+                placeholder={`Provide instructions for the AI on when and how to use this MCP server.\n\nExample:\nUse this server for file operations. Always confirm before deleting files.`}
+                value={formData.customPrompt}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, customPrompt: e.target.value }))
+                }
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground">
+                These instructions will be included in the AI's system prompt when this server is
+                enabled.
+              </p>
             </div>
           </div>
 

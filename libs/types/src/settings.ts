@@ -176,6 +176,12 @@ export interface McpServerConfig {
   transport: StdioMcpConfig | HttpMcpConfig;
   /** Whether this server is enabled by default for new tasks */
   enabled: boolean;
+  /**
+   * Custom prompt/instructions for the AI agent.
+   * Provides high-level guidance on when and how to use this MCP server.
+   * Example: "Use this server for reading and writing files in the project directory."
+   */
+  customPrompt?: string;
   /** ISO timestamp of when the server was created */
   createdAt: string;
   /** ISO timestamp of when the server was last updated */
