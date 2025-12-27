@@ -32,6 +32,9 @@ import {
   ChevronRight,
   Wrench,
   RefreshCw,
+  FileJson,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getElectronAPI } from '@/lib/electron';
@@ -152,7 +155,8 @@ function ToolsList({ tools }: { tools: McpToolInfo[] }) {
 }
 
 export function McpSettingsPanel() {
-  const { mcpServers, addMcpServer, updateMcpServer, deleteMcpServer } = useAppStore();
+  const { mcpServers, addMcpServer, updateMcpServer, deleteMcpServer, setMcpServers } =
+    useAppStore();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingServer, setEditingServer] = useState<McpServerConfig | null>(null);
@@ -160,6 +164,14 @@ export function McpSettingsPanel() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [testingServerId, setTestingServerId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // JSON editor dialog state
+  const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
+  const [jsonConfig, setJsonConfig] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [isLoadingJson, setIsLoadingJson] = useState(false);
+  const [isSavingJson, setIsSavingJson] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleOpenAddDialog = () => {
     setEditingServer(null);
@@ -437,6 +449,109 @@ export function McpSettingsPanel() {
     }
   };
 
+  // JSON editor handlers
+  const handleOpenJsonEditor = async () => {
+    setIsLoadingJson(true);
+    setJsonError(null);
+    setJsonDialogOpen(true);
+
+    try {
+      const api = getElectronAPI();
+      if (!api.settings?.getMcpConfig) {
+        // Fall back to using the current mcpServers from store
+        setJsonConfig(JSON.stringify(mcpServers, null, 2));
+        setIsLoadingJson(false);
+        return;
+      }
+
+      const response = await api.settings.getMcpConfig();
+      if (response.success && response.config) {
+        setJsonConfig(response.config);
+      } else {
+        setJsonConfig(JSON.stringify(mcpServers, null, 2));
+      }
+    } catch (error) {
+      console.error('Failed to load MCP config:', error);
+      setJsonConfig(JSON.stringify(mcpServers, null, 2));
+    } finally {
+      setIsLoadingJson(false);
+    }
+  };
+
+  const handleJsonChange = (value: string) => {
+    setJsonConfig(value);
+    setJsonError(null);
+
+    // Validate JSON on change
+    try {
+      const parsed = JSON.parse(value);
+      if (!Array.isArray(parsed)) {
+        setJsonError('Configuration must be a JSON array');
+      }
+    } catch (e) {
+      // Don't show error while typing, only on save
+    }
+  };
+
+  const handleSaveJsonConfig = async () => {
+    setJsonError(null);
+    setIsSavingJson(true);
+
+    try {
+      // First validate the JSON locally
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(jsonConfig);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Invalid JSON';
+        setJsonError(`JSON Parse Error: ${message}`);
+        setIsSavingJson(false);
+        return;
+      }
+
+      if (!Array.isArray(parsed)) {
+        setJsonError('Configuration must be a JSON array of server configurations');
+        setIsSavingJson(false);
+        return;
+      }
+
+      // Send to the backend for validation and saving
+      const api = getElectronAPI();
+      if (!api.settings?.updateMcpConfig) {
+        setJsonError('MCP config update not available');
+        setIsSavingJson(false);
+        return;
+      }
+
+      const response = await api.settings.updateMcpConfig(jsonConfig);
+
+      if (response.success && response.servers) {
+        // Update the local store with the normalized servers
+        setMcpServers(response.servers as McpServerConfig[]);
+        toast.success(`MCP configuration saved (${response.servers.length} servers)`);
+        setJsonDialogOpen(false);
+      } else {
+        setJsonError(response.error || 'Failed to save configuration');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setJsonError(`Save Error: ${message}`);
+    } finally {
+      setIsSavingJson(false);
+    }
+  };
+
+  const handleCopyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(jsonConfig);
+      setCopied(true);
+      toast.success('Configuration copied to clipboard');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      toast.error('Failed to copy to clipboard');
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -461,6 +576,16 @@ export function McpSettingsPanel() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenJsonEditor}
+              className="gap-1.5"
+              title="Edit raw JSON configuration"
+            >
+              <FileJson className="w-4 h-4" />
+              Import/Export
+            </Button>
             {mcpServers.length > 0 && (
               <Button
                 variant="outline"
@@ -793,6 +918,114 @@ export function McpSettingsPanel() {
                 'Save Changes'
               ) : (
                 'Add Server'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* JSON Config Editor Dialog */}
+      <Dialog open={jsonDialogOpen} onOpenChange={setJsonDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileJson className="w-5 h-5" />
+              MCP Server Configuration (JSON)
+            </DialogTitle>
+            <DialogDescription>
+              Edit the raw JSON configuration for all MCP servers. You can copy existing
+              configurations from other tools or paste Claude Desktop's config format here.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 space-y-4 py-4">
+            {isLoadingJson ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="json-config" className="text-sm font-medium">
+                    Server Configuration Array
+                  </Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopyJson}
+                    className="gap-1.5 h-7 text-xs"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-green-500" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <Textarea
+                  id="json-config"
+                  value={jsonConfig}
+                  onChange={(e) => handleJsonChange(e.target.value)}
+                  className={cn(
+                    'font-mono text-sm min-h-[300px] resize-y',
+                    jsonError && 'border-destructive focus-visible:ring-destructive/50'
+                  )}
+                  placeholder={`[
+  {
+    "id": "server-1",
+    "name": "filesystem",
+    "description": "Access to project files",
+    "enabled": true,
+    "transport": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./project"]
+    }
+  }
+]`}
+                />
+                {jsonError && (
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                    <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-destructive">{jsonError}</p>
+                  </div>
+                )}
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>
+                    <strong>Required fields:</strong> id, name, enabled, transport (with type,
+                    command/url, args)
+                  </p>
+                  <p>
+                    <strong>Transport types:</strong> "stdio" (for local commands) or "http" (for
+                    remote servers)
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setJsonDialogOpen(false)}
+              disabled={isSavingJson}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveJsonConfig} disabled={isSavingJson || isLoadingJson}>
+              {isSavingJson ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Configuration'
               )}
             </Button>
           </DialogFooter>

@@ -682,6 +682,18 @@ export interface ElectronAPI {
       >;
       error?: string;
     }>;
+    getMcpConfig: () => Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }>;
+    updateMcpConfig: (config: string) => Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }>;
   };
 }
 

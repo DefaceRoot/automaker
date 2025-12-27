@@ -1086,6 +1086,23 @@ export class HttpApiClient implements ElectronAPI {
       >;
       error?: string;
     }> => this.post('/api/settings/mcp-servers/test-all', { timeoutMs }),
+
+    // MCP Config JSON editing (raw JSON import/export)
+    getMcpConfig: (): Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }> => this.get('/api/settings/mcp-config'),
+
+    updateMcpConfig: (
+      config: string
+    ): Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }> => this.put('/api/settings/mcp-config', { config }),
   };
 
   // Sessions API

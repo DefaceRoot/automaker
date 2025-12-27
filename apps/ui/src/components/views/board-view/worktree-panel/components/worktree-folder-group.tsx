@@ -121,7 +121,10 @@ export function WorktreeFolderGroup({
     return (
       <div
         key={worktree.path}
-        className={cn('flex items-center gap-1 px-2 py-1 rounded-sm', isSelected && 'bg-accent')}
+        className={cn(
+          'flex items-center gap-1.5 px-2 py-1.5 rounded-sm',
+          isSelected && 'bg-accent'
+        )}
       >
         {/* Clickable worktree selection area */}
         <div
@@ -136,7 +139,7 @@ export function WorktreeFolderGroup({
             }
           }}
         >
-          <span className="flex-1 text-xs font-mono truncate" title={worktree.branch}>
+          <span className="flex-1 text-xs font-mono" title={worktree.branch}>
             {branchSuffix}
           </span>
           {cardCount !== undefined && cardCount > 0 && (
@@ -232,13 +235,13 @@ export function WorktreeFolderGroup({
                   variant="outline"
                   size="sm"
                   className={cn(
-                    'h-7 px-3 text-xs font-medium gap-1.5 border-r-0 rounded-l-md rounded-r-none',
+                    'h-7 px-3 text-xs font-medium gap-1.5 rounded-md',
                     'bg-secondary/50 hover:bg-secondary'
                   )}
                   aria-label={`${folderLabel} folder with ${worktreeCount} worktrees`}
                 >
                   <FolderOpen className="w-3 h-3 shrink-0" />
-                  <span className="truncate max-w-[100px]" title={folderLabel}>
+                  <span className="truncate max-w-[180px]" title={folderLabel}>
                     {folderLabel}
                   </span>
                   <span className="inline-flex items-center justify-center h-4 min-w-[1rem] px-1 text-[10px] font-medium rounded bg-background/80 text-foreground border border-border shrink-0">
@@ -255,7 +258,7 @@ export function WorktreeFolderGroup({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <DropdownMenuContent align="start" className="min-w-[200px] max-w-[300px]">
+        <DropdownMenuContent align="start" className="min-w-[240px] max-w-[400px] w-auto">
           <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-b mb-1">
             {folderLabel} ({worktreeCount})
           </div>

@@ -59,6 +59,15 @@ export {
   type McpTestResult,
 } from './mcp-test-service.js';
 
+// MCP Task Isolation - Strict per-task isolation boundaries
+export {
+  McpTaskIsolationService,
+  getMcpTaskIsolationService,
+  resetMcpTaskIsolationService,
+  type TaskMcpContext,
+  type McpAccessValidation,
+} from './mcp-task-isolation.js';
+
 // Re-export types from @automaker/types for convenience
 export type {
   McpServerConfig,

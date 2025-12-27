@@ -27,6 +27,8 @@ import {
   createTestMcpServerHandler,
   createTestAllMcpServersHandler,
 } from './routes/test-mcp-server.js';
+import { createGetMcpConfigHandler } from './routes/get-mcp-config.js';
+import { createUpdateMcpConfigHandler } from './routes/update-mcp-config.js';
 
 /**
  * Create settings router with all endpoints
@@ -81,6 +83,10 @@ export function createSettingsRoutes(settingsService: SettingsService): Router {
   // MCP server testing
   router.post('/mcp-servers/test', createTestMcpServerHandler(settingsService));
   router.post('/mcp-servers/test-all', createTestAllMcpServersHandler(settingsService));
+
+  // MCP config JSON editing (raw JSON import/export)
+  router.get('/mcp-config', createGetMcpConfigHandler(settingsService));
+  router.put('/mcp-config', createUpdateMcpConfigHandler(settingsService));
 
   return router;
 }
