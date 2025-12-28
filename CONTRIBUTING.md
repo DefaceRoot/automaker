@@ -6,6 +6,14 @@ Automaker is an autonomous AI development studio that provides a Kanban-based wo
 
 This guide will help you get started with contributing to Automaker. Please take a moment to read through these guidelines to ensure a smooth contribution process.
 
+## Contribution License Agreement
+
+**Important:** By submitting, pushing, or contributing any code, documentation, pull requests, issues, or other materials to the Automaker project, you agree to assign all right, title, and interest in and to your contributions, including all copyrights, patents, and other intellectual property rights, to the Core Contributors of Automaker. This assignment is irrevocable and includes the right to use, modify, distribute, and monetize your contributions in any manner.
+
+**You understand and agree that you will have no right to receive any royalties, compensation, or other financial benefits from any revenue, income, or commercial use generated from your contributed code or any derivative works thereof.** All contributions are made without expectation of payment or financial return.
+
+For complete details on contribution terms and rights assignment, please review [Section 5 (CONTRIBUTIONS AND RIGHTS ASSIGNMENT) of the LICENSE](LICENSE#5-contributions-and-rights-assignment).
+
 ## Table of Contents
 
 - [Contributing to Automaker](#contributing-to-automaker)
