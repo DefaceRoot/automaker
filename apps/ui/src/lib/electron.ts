@@ -1,7 +1,31 @@
 // Type definitions for Electron IPC API
 import type { SessionListItem, Message } from '@/types/electron';
 import type { ClaudeUsageResponse } from '@/store/app-store';
+import type { DocsAPI } from './http-api-client';
+import type {
+  IssueValidationVerdict,
+  IssueValidationConfidence,
+  IssueComplexity,
+  IssueValidationInput,
+  IssueValidationResult,
+  IssueValidationResponse,
+  IssueValidationEvent,
+  StoredValidation,
+  AgentModel,
+} from '@automaker/types';
 import { getJSON, setJSON, removeItem } from './storage';
+
+// Re-export issue validation types for use in components
+export type {
+  IssueValidationVerdict,
+  IssueValidationConfidence,
+  IssueComplexity,
+  IssueValidationInput,
+  IssueValidationResult,
+  IssueValidationResponse,
+  IssueValidationEvent,
+  StoredValidation,
+};
 
 export interface FileEntry {
   name: string;
@@ -100,6 +124,19 @@ export interface GitHubLabel {
 
 export interface GitHubAuthor {
   login: string;
+  avatarUrl?: string;
+}
+
+export interface GitHubAssignee {
+  login: string;
+  avatarUrl?: string;
+}
+
+export interface LinkedPullRequest {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
 }
 
 export interface GitHubIssue {
@@ -111,6 +148,8 @@ export interface GitHubIssue {
   labels: GitHubLabel[];
   url: string;
   body: string;
+  assignees: GitHubAssignee[];
+  linkedPRs?: LinkedPullRequest[];
 }
 
 export interface GitHubPR {
@@ -156,6 +195,46 @@ export interface GitHubAPI {
     mergedPRs?: GitHubPR[];
     error?: string;
   }>;
+  /** Start async validation of a GitHub issue */
+  validateIssue: (
+    projectPath: string,
+    issue: IssueValidationInput,
+    model?: AgentModel
+  ) => Promise<{ success: boolean; message?: string; issueNumber?: number; error?: string }>;
+  /** Check validation status for an issue or all issues */
+  getValidationStatus: (
+    projectPath: string,
+    issueNumber?: number
+  ) => Promise<{
+    success: boolean;
+    isRunning?: boolean;
+    startedAt?: string;
+    runningIssues?: number[];
+    error?: string;
+  }>;
+  /** Stop a running validation */
+  stopValidation: (
+    projectPath: string,
+    issueNumber: number
+  ) => Promise<{ success: boolean; message?: string; error?: string }>;
+  /** Get stored validations for a project */
+  getValidations: (
+    projectPath: string,
+    issueNumber?: number
+  ) => Promise<{
+    success: boolean;
+    validation?: StoredValidation | null;
+    validations?: StoredValidation[];
+    isStale?: boolean;
+    error?: string;
+  }>;
+  /** Mark a validation as viewed by the user */
+  markValidationViewed: (
+    projectPath: string,
+    issueNumber: number
+  ) => Promise<{ success: boolean; error?: string }>;
+  /** Subscribe to validation events */
+  onValidationEvent: (callback: (event: IssueValidationEvent) => void) => () => void;
 }
 
 // Feature Suggestions types
@@ -335,6 +414,10 @@ export interface SaveImageResult {
 export interface ElectronAPI {
   ping: () => Promise<string>;
   openExternalLink: (url: string) => Promise<{ success: boolean; error?: string }>;
+  openDevServerPreview?: (
+    url: string,
+    title?: string
+  ) => Promise<{ success: boolean; error?: string }>;
   openDirectory: () => Promise<DialogResult>;
   openFile: (options?: object) => Promise<DialogResult>;
   readFile: (filePath: string) => Promise<FileResult>;
@@ -449,6 +532,7 @@ export interface ElectronAPI {
       success: boolean;
       hasAnthropicKey: boolean;
       hasGoogleKey: boolean;
+      hasZaiKey: boolean;
     }>;
     getPlatform: () => Promise<{
       success: boolean;
@@ -460,6 +544,11 @@ export interface ElectronAPI {
       isLinux: boolean;
     }>;
     verifyClaudeAuth: (authMethod?: 'cli' | 'api_key') => Promise<{
+      success: boolean;
+      authenticated: boolean;
+      error?: string;
+    }>;
+    verifyZaiAuth: (apiKey?: string) => Promise<{
       success: boolean;
       authenticated: boolean;
       error?: string;
@@ -548,6 +637,66 @@ export interface ElectronAPI {
       error?: string;
     }>;
   };
+  settings?: {
+    updateCredentials: (updates: {
+      apiKeys?: { anthropic?: string; google?: string; openai?: string; zai?: string };
+    }) => Promise<{
+      success: boolean;
+      credentials?: {
+        anthropic: { configured: boolean; masked: string };
+        google: { configured: boolean; masked: string };
+        openai: { configured: boolean; masked: string };
+        zai: { configured: boolean; masked: string };
+      };
+      error?: string;
+    }>;
+    testMcpServer: (
+      config?: unknown,
+      serverId?: string,
+      timeoutMs?: number
+    ) => Promise<{
+      success: boolean;
+      result?: {
+        success: boolean;
+        status: 'connected' | 'failed' | 'timeout';
+        serverInfo?: { name: string; version: string };
+        tools?: Array<{ name: string; description?: string; inputSchema?: object }>;
+        error?: string;
+        latencyMs: number;
+        testedAt: string;
+      };
+      error?: string;
+    }>;
+    testAllMcpServers: (timeoutMs?: number) => Promise<{
+      success: boolean;
+      results?: Record<
+        string,
+        {
+          success: boolean;
+          status: 'connected' | 'failed' | 'timeout';
+          serverInfo?: { name: string; version: string };
+          tools?: Array<{ name: string; description?: string; inputSchema?: object }>;
+          error?: string;
+          latencyMs: number;
+          testedAt: string;
+        }
+      >;
+      error?: string;
+    }>;
+    getMcpConfig: () => Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }>;
+    updateMcpConfig: (config: string) => Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }>;
+  };
+  docs?: DocsAPI;
 }
 
 // Note: Window interface is declared in @/types/electron.d.ts
@@ -1014,6 +1163,7 @@ interface SetupAPI {
     success: boolean;
     hasAnthropicKey: boolean;
     hasGoogleKey: boolean;
+    hasZaiKey: boolean;
   }>;
   deleteApiKey: (
     provider: string
@@ -1028,6 +1178,11 @@ interface SetupAPI {
     isLinux: boolean;
   }>;
   verifyClaudeAuth: (authMethod?: 'cli' | 'api_key') => Promise<{
+    success: boolean;
+    authenticated: boolean;
+    error?: string;
+  }>;
+  verifyZaiAuth: (apiKey?: string) => Promise<{
     success: boolean;
     authenticated: boolean;
     error?: string;
@@ -1097,6 +1252,7 @@ function createMockSetupAPI(): SetupAPI {
         success: true,
         hasAnthropicKey: false,
         hasGoogleKey: false,
+        hasZaiKey: false,
       };
     },
 
@@ -1119,6 +1275,16 @@ function createMockSetupAPI(): SetupAPI {
 
     verifyClaudeAuth: async (authMethod?: 'cli' | 'api_key') => {
       console.log('[Mock] Verifying Claude auth with method:', authMethod);
+      // Mock always returns not authenticated
+      return {
+        success: true,
+        authenticated: false,
+        error: 'Mock environment - authentication not available',
+      };
+    },
+
+    verifyZaiAuth: async (_apiKey?: string) => {
+      console.log('[Mock] Verifying Z.AI auth');
       // Mock always returns not authenticated
       return {
         success: true,
@@ -1441,6 +1607,25 @@ function createMockWorktreeAPI(): WorktreeAPI {
           hasPR: false,
           ghCliAvailable: false,
         },
+      };
+    },
+
+    stageChanges: async (
+      projectPath: string,
+      featureId: string,
+      options?: { targetBranch?: string }
+    ) => {
+      console.log('[Mock] Staging changes:', { projectPath, featureId, options });
+      return {
+        success: true,
+        staged: true,
+        conflicts: [],
+        allConflictsResolved: true,
+        suggestedMessage: `feat: merge feature/${featureId}`,
+        diffSummary: '3 files changed, 50 insertions(+), 10 deletions(-)',
+        filesChanged: 3,
+        insertions: 50,
+        deletions: 10,
       };
     },
   };
@@ -2603,6 +2788,8 @@ function createMockRunningAgentsAPI(): RunningAgentsAPI {
 }
 
 // Mock GitHub API implementation
+let mockValidationCallbacks: ((event: IssueValidationEvent) => void)[] = [];
+
 function createMockGitHubAPI(): GitHubAPI {
   return {
     checkRemote: async (projectPath: string) => {
@@ -2629,6 +2816,81 @@ function createMockGitHubAPI(): GitHubAPI {
         success: true,
         openPRs: [],
         mergedPRs: [],
+      };
+    },
+    validateIssue: async (projectPath: string, issue: IssueValidationInput, model?: AgentModel) => {
+      console.log('[Mock] Starting async validation:', { projectPath, issue, model });
+
+      // Simulate async validation in background
+      setTimeout(() => {
+        mockValidationCallbacks.forEach((cb) =>
+          cb({
+            type: 'issue_validation_start',
+            issueNumber: issue.issueNumber,
+            issueTitle: issue.issueTitle,
+            projectPath,
+          })
+        );
+
+        setTimeout(() => {
+          mockValidationCallbacks.forEach((cb) =>
+            cb({
+              type: 'issue_validation_complete',
+              issueNumber: issue.issueNumber,
+              issueTitle: issue.issueTitle,
+              result: {
+                verdict: 'valid' as const,
+                confidence: 'medium' as const,
+                reasoning:
+                  'This is a mock validation. In production, Claude SDK would analyze the codebase to validate this issue.',
+                relatedFiles: ['src/components/example.tsx'],
+                estimatedComplexity: 'moderate' as const,
+              },
+              projectPath,
+              model: model || 'sonnet',
+            })
+          );
+        }, 2000);
+      }, 100);
+
+      return {
+        success: true,
+        message: `Validation started for issue #${issue.issueNumber}`,
+        issueNumber: issue.issueNumber,
+      };
+    },
+    getValidationStatus: async (projectPath: string, issueNumber?: number) => {
+      console.log('[Mock] Getting validation status:', { projectPath, issueNumber });
+      return {
+        success: true,
+        isRunning: false,
+        runningIssues: [],
+      };
+    },
+    stopValidation: async (projectPath: string, issueNumber: number) => {
+      console.log('[Mock] Stopping validation:', { projectPath, issueNumber });
+      return {
+        success: true,
+        message: `Validation for issue #${issueNumber} stopped`,
+      };
+    },
+    getValidations: async (projectPath: string, issueNumber?: number) => {
+      console.log('[Mock] Getting validations:', { projectPath, issueNumber });
+      return {
+        success: true,
+        validations: [],
+      };
+    },
+    markValidationViewed: async (projectPath: string, issueNumber: number) => {
+      console.log('[Mock] Marking validation as viewed:', { projectPath, issueNumber });
+      return {
+        success: true,
+      };
+    },
+    onValidationEvent: (callback: (event: IssueValidationEvent) => void) => {
+      mockValidationCallbacks.push(callback);
+      return () => {
+        mockValidationCallbacks = mockValidationCallbacks.filter((cb) => cb !== callback);
       };
     },
   };

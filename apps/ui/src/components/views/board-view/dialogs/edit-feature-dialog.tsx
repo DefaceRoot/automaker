@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { HotkeyButton } from '@/components/ui/hotkey-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CategoryAutocomplete } from '@/components/ui/category-autocomplete';
 import {
   DescriptionImageDropZone,
@@ -26,6 +27,7 @@ import {
   Sparkles,
   ChevronDown,
   GitBranch,
+  Server,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getElectronAPI } from '@/lib/electron';
@@ -46,7 +48,9 @@ import {
   PrioritySelector,
   BranchSelector,
   PlanningModeSelector,
+  WorktreeCategorySelector,
 } from '../shared';
+import type { WorktreeCategory } from '@automaker/types';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +58,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { DependencyTreeDialog } from './dependency-tree-dialog';
+import { useNavigate } from '@tanstack/react-router';
 
 interface EditFeatureDialogProps {
   feature: Feature | null;
@@ -66,23 +71,28 @@ interface EditFeatureDialogProps {
       description: string;
       skipTests: boolean;
       model: AgentModel;
+      planningModel?: AgentModel;
       thinkingLevel: ThinkingLevel;
       imagePaths: DescriptionImagePath[];
       textFilePaths: DescriptionTextFilePath[];
       branchName: string; // Can be empty string to use current branch
       priority: number;
-      planningMode: PlanningMode;
-      requirePlanApproval: boolean;
+      planningMode?: PlanningMode;
+      requirePlanApproval?: boolean;
+      implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+      implementationEndpointUrl?: string;
+      enabledMcpServers?: string[];
+      worktreeCategory?: WorktreeCategory;
     }
   ) => void;
-  categorySuggestions: string[];
-  branchSuggestions: string[];
-  branchCardCounts?: Record<string, number>; // Map of branch name to unarchived card count
+  categorySuggestions?: string[];
+  branchSuggestions?: string[];
+  branchCardCounts?: Record<string, number>;
   currentBranch?: string;
-  isMaximized: boolean;
-  showProfilesOnly: boolean;
-  aiProfiles: AIProfile[];
-  allFeatures: Feature[];
+  isMaximized?: boolean;
+  showProfilesOnly?: boolean;
+  aiProfiles?: AIProfile[];
+  allFeatures?: Feature[];
 }
 
 export function EditFeatureDialog({
@@ -98,6 +108,7 @@ export function EditFeatureDialog({
   aiProfiles,
   allFeatures,
 }: EditFeatureDialogProps) {
+  const navigate = useNavigate();
   const [editingFeature, setEditingFeature] = useState<Feature | null>(feature);
   const [useCurrentBranch, setUseCurrentBranch] = useState(() => {
     // If feature has no branchName, default to using current branch
@@ -117,8 +128,17 @@ export function EditFeatureDialog({
     feature?.requirePlanApproval ?? false
   );
 
-  // Get enhancement model and worktrees setting from store
-  const { enhancementModel, useWorktrees } = useAppStore();
+  // Get enhancement model, worktrees setting, and MCP servers from store
+  const { enhancementModel, useWorktrees, mcpServers } = useAppStore();
+
+  // MCP server selection state - initialize from feature or global defaults
+  const [enabledMcpServers, setEnabledMcpServers] = useState<string[]>(() => {
+    if (feature?.enabledMcpServers) {
+      return feature.enabledMcpServers;
+    }
+    // Default to globally enabled servers
+    return mcpServers.filter((s) => s.enabled).map((s) => s.id);
+  });
 
   useEffect(() => {
     setEditingFeature(feature);
@@ -127,11 +147,15 @@ export function EditFeatureDialog({
       setRequirePlanApproval(feature.requirePlanApproval ?? false);
       // If feature has no branchName, default to using current branch
       setUseCurrentBranch(!feature.branchName);
+      // Sync MCP servers - use feature's settings or fall back to global defaults
+      setEnabledMcpServers(
+        feature.enabledMcpServers ?? mcpServers.filter((s) => s.enabled).map((s) => s.id)
+      );
     } else {
       setEditFeaturePreviewMap(new Map());
       setShowEditAdvancedOptions(false);
     }
-  }, [feature]);
+  }, [feature, mcpServers]);
 
   const handleUpdate = () => {
     if (!editingFeature) return;
@@ -166,6 +190,7 @@ export function EditFeatureDialog({
       description: editingFeature.description,
       skipTests: editingFeature.skipTests ?? false,
       model: selectedModel,
+      planningModel: editingFeature.planningModel,
       thinkingLevel: normalizedThinking,
       imagePaths: editingFeature.imagePaths ?? [],
       textFilePaths: editingFeature.textFilePaths ?? [],
@@ -173,6 +198,10 @@ export function EditFeatureDialog({
       priority: editingFeature.priority ?? 2,
       planningMode,
       requirePlanApproval,
+      implementationEndpointPreset: editingFeature.implementationEndpointPreset,
+      implementationEndpointUrl: editingFeature.implementationEndpointUrl,
+      enabledMcpServers,
+      worktreeCategory: editingFeature.worktreeCategory,
     };
 
     onUpdate(editingFeature.id, updates);
@@ -193,15 +222,25 @@ export function EditFeatureDialog({
       ...editingFeature,
       model,
       thinkingLevel: modelSupportsThinking(model) ? editingFeature.thinkingLevel : 'none',
+      // Auto-default to Z.AI endpoint for GLM-4.7
+      implementationEndpointPreset:
+        model === 'glm-4.7' ? 'zai' : editingFeature.implementationEndpointPreset,
     });
   };
 
-  const handleProfileSelect = (model: AgentModel, thinkingLevel: ThinkingLevel) => {
+  const handleProfileSelect = (
+    model: AgentModel,
+    planningModel: AgentModel,
+    thinkingLevel: ThinkingLevel,
+    implementationEndpointPreset?: 'default' | 'zai' | 'custom'
+  ) => {
     if (!editingFeature) return;
     setEditingFeature({
       ...editingFeature,
       model,
+      planningModel: planningModel || model,
       thinkingLevel,
+      implementationEndpointPreset,
     });
   };
 
@@ -396,6 +435,21 @@ export function EditFeatureDialog({
               />
             )}
 
+            {/* Worktree Category Selector - only show when worktrees are enabled */}
+            {useWorktrees && (
+              <WorktreeCategorySelector
+                selectedCategory={editingFeature.worktreeCategory ?? 'feature'}
+                onCategorySelect={(worktreeCategory) =>
+                  setEditingFeature({
+                    ...editingFeature,
+                    worktreeCategory,
+                  })
+                }
+                testIdPrefix="edit-feature"
+                disabled={editingFeature.status !== 'backlog'}
+              />
+            )}
+
             {/* Priority Selector */}
             <PrioritySelector
               selectedPriority={editingFeature.priority ?? 2}
@@ -436,7 +490,9 @@ export function EditFeatureDialog({
             <ProfileQuickSelect
               profiles={aiProfiles}
               selectedModel={editingFeature.model ?? 'opus'}
+              selectedPlanningModel={editingFeature.planningModel}
               selectedThinkingLevel={editingFeature.thinkingLevel ?? 'none'}
+              selectedImplementationEndpointPreset={editingFeature.implementationEndpointPreset}
               onSelect={handleProfileSelect}
               testIdPrefix="edit-profile-quick-select"
             />
@@ -491,6 +547,71 @@ export function EditFeatureDialog({
               onSkipTestsChange={(skipTests) => setEditingFeature({ ...editingFeature, skipTests })}
               testIdPrefix="edit"
             />
+
+            <div className="border-t border-border my-4" />
+
+            {/* MCP Servers Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">MCP Servers</Label>
+              </div>
+              {mcpServers.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  <p>No MCP servers configured.</p>
+                  <p className="mt-1">
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-brand-500"
+                      onClick={() => {
+                        onClose();
+                        navigate({ to: '/settings', search: { section: 'mcp' } });
+                      }}
+                    >
+                      Add MCP servers in Settings
+                    </Button>{' '}
+                    to extend Claude's capabilities.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Select which MCP servers to enable for this feature.
+                  </p>
+                  <div className="space-y-2">
+                    {mcpServers.map((server) => (
+                      <div key={server.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`edit-mcp-${server.id}`}
+                          checked={enabledMcpServers.includes(server.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setEnabledMcpServers([...enabledMcpServers, server.id]);
+                            } else {
+                              setEnabledMcpServers(
+                                enabledMcpServers.filter((id) => id !== server.id)
+                              );
+                            }
+                          }}
+                          data-testid={`edit-mcp-server-${server.id}`}
+                        />
+                        <Label
+                          htmlFor={`edit-mcp-${server.id}`}
+                          className="text-sm cursor-pointer flex items-center gap-2"
+                        >
+                          {server.name}
+                          {server.description && (
+                            <span className="text-xs text-muted-foreground">
+                              — {server.description}
+                            </span>
+                          )}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
         <DialogFooter className="sm:!justify-between">

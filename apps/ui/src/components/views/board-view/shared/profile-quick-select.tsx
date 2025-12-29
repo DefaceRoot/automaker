@@ -7,8 +7,15 @@ import { PROFILE_ICONS } from './model-constants';
 interface ProfileQuickSelectProps {
   profiles: AIProfile[];
   selectedModel: AgentModel;
+  selectedPlanningModel?: AgentModel;
   selectedThinkingLevel: ThinkingLevel;
-  onSelect: (model: AgentModel, thinkingLevel: ThinkingLevel) => void;
+  selectedImplementationEndpointPreset?: 'default' | 'zai' | 'custom';
+  onSelect: (
+    model: AgentModel,
+    planningModel: AgentModel,
+    thinkingLevel: ThinkingLevel,
+    implementationEndpointPreset?: 'default' | 'zai' | 'custom'
+  ) => void;
   testIdPrefix?: string;
   showManageLink?: boolean;
   onManageLinkClick?: () => void;
@@ -17,7 +24,9 @@ interface ProfileQuickSelectProps {
 export function ProfileQuickSelect({
   profiles,
   selectedModel,
+  selectedPlanningModel,
   selectedThinkingLevel,
+  selectedImplementationEndpointPreset,
   onSelect,
   testIdPrefix = 'profile-quick-select',
   showManageLink = false,
@@ -41,13 +50,25 @@ export function ProfileQuickSelect({
       <div className="grid grid-cols-2 gap-2">
         {profiles.slice(0, 6).map((profile) => {
           const IconComponent = profile.icon ? PROFILE_ICONS[profile.icon] : Brain;
+          const planningModel = profile.planningModel || profile.model;
           const isSelected =
-            selectedModel === profile.model && selectedThinkingLevel === profile.thinkingLevel;
+            selectedModel === profile.model &&
+            selectedThinkingLevel === profile.thinkingLevel &&
+            (selectedPlanningModel === planningModel || !selectedPlanningModel) &&
+            (selectedImplementationEndpointPreset === profile.implementationEndpointPreset ||
+              !selectedImplementationEndpointPreset);
           return (
             <button
               key={profile.id}
               type="button"
-              onClick={() => onSelect(profile.model, profile.thinkingLevel)}
+              onClick={() =>
+                onSelect(
+                  profile.model,
+                  planningModel,
+                  profile.thinkingLevel,
+                  profile.implementationEndpointPreset
+                )
+              }
               className={cn(
                 'flex items-center gap-2 p-2 rounded-lg border text-left transition-all',
                 isSelected
@@ -62,6 +83,7 @@ export function ProfileQuickSelect({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{profile.name}</p>
                 <p className="text-[10px] text-muted-foreground truncate">
+                  {profile.planningModel ? `${profile.planningModel} → ` : ''}
                   {profile.model}
                   {profile.thinkingLevel !== 'none' && ` + ${profile.thinkingLevel}`}
                 </p>

@@ -38,16 +38,23 @@ import {
   isTerminalPasswordRequired,
 } from './routes/terminal/index.js';
 import { createSettingsRoutes } from './routes/settings/index.js';
+import { createMcpServersRoutes } from './routes/mcp-servers/index.js';
 import { AgentService } from './services/agent-service.js';
 import { FeatureLoader } from './services/feature-loader.js';
 import { AutoModeService } from './services/auto-mode-service.js';
 import { getTerminalService } from './services/terminal-service.js';
 import { SettingsService } from './services/settings-service.js';
+import { MCPServerService } from './services/mcp-server-service.js';
 import { createSpecRegenerationRoutes } from './routes/app-spec/index.js';
 import { createClaudeRoutes } from './routes/claude/index.js';
 import { ClaudeUsageService } from './services/claude-usage-service.js';
+import { DocsService } from './services/docs-service.js';
 import { createGitHubRoutes } from './routes/github/index.js';
 import { createContextRoutes } from './routes/context/index.js';
+import { createBacklogPlanRoutes } from './routes/backlog-plan/index.js';
+import { createDocsRoutes } from './routes/docs/index.js';
+import { cleanupStaleValidations } from './routes/github/routes/validation-common.js';
+import { getMcpServerManager } from './services/mcp-server-manager.js';
 
 // Load environment variables
 dotenv.config();
@@ -111,17 +118,29 @@ app.use(express.json({ limit: '50mb' }));
 const events: EventEmitter = createEventEmitter();
 
 // Create services
-const agentService = new AgentService(DATA_DIR, events);
-const featureLoader = new FeatureLoader();
-const autoModeService = new AutoModeService(events);
+// Note: settingsService is created first so it can be injected into other services
 const settingsService = new SettingsService(DATA_DIR);
+const mcpServerService = new MCPServerService(events);
+const agentService = new AgentService(DATA_DIR, events, settingsService);
+const featureLoader = new FeatureLoader();
+const autoModeService = new AutoModeService(events, settingsService);
 const claudeUsageService = new ClaudeUsageService();
+const docsService = new DocsService(events);
 
 // Initialize services
 (async () => {
   await agentService.initialize();
   console.log('[Server] Agent service initialized');
 })();
+
+// Run stale validation cleanup every hour to prevent memory leaks from crashed validations
+const VALIDATION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+setInterval(() => {
+  const cleaned = cleanupStaleValidations();
+  if (cleaned > 0) {
+    console.log(`[Server] Cleaned up ${cleaned} stale validation entries`);
+  }
+}, VALIDATION_CLEANUP_INTERVAL_MS);
 
 // Mount API routes - health is unauthenticated for monitoring
 app.use('/api/health', createHealthRoutes());
@@ -132,23 +151,26 @@ app.use('/api', authMiddleware);
 app.use('/api/fs', createFsRoutes(events));
 app.use('/api/agent', createAgentRoutes(agentService, events));
 app.use('/api/sessions', createSessionsRoutes(agentService));
-app.use('/api/features', createFeaturesRoutes(featureLoader));
+app.use('/api/features', createFeaturesRoutes(featureLoader, settingsService));
 app.use('/api/auto-mode', createAutoModeRoutes(autoModeService));
-app.use('/api/enhance-prompt', createEnhancePromptRoutes());
-app.use('/api/worktree', createWorktreeRoutes());
+app.use('/api/enhance-prompt', createEnhancePromptRoutes(settingsService));
+app.use('/api/worktree', createWorktreeRoutes(settingsService));
 app.use('/api/git', createGitRoutes());
 app.use('/api/setup', createSetupRoutes());
-app.use('/api/suggestions', createSuggestionsRoutes(events));
+app.use('/api/suggestions', createSuggestionsRoutes(events, settingsService));
 app.use('/api/models', createModelsRoutes());
-app.use('/api/spec-regeneration', createSpecRegenerationRoutes(events));
+app.use('/api/spec-regeneration', createSpecRegenerationRoutes(events, settingsService));
 app.use('/api/running-agents', createRunningAgentsRoutes(autoModeService));
 app.use('/api/workspace', createWorkspaceRoutes());
 app.use('/api/templates', createTemplatesRoutes());
 app.use('/api/terminal', createTerminalRoutes());
 app.use('/api/settings', createSettingsRoutes(settingsService));
 app.use('/api/claude', createClaudeRoutes(claudeUsageService));
-app.use('/api/github', createGitHubRoutes());
-app.use('/api/context', createContextRoutes());
+app.use('/api/github', createGitHubRoutes(events, settingsService));
+app.use('/api/context', createContextRoutes(settingsService));
+app.use('/api/backlog-plan', createBacklogPlanRoutes(events, settingsService));
+app.use('/api/docs', createDocsRoutes(docsService));
+app.use('/api/mcp-servers', createMcpServersRoutes(mcpServerService));
 
 // Create HTTP server
 const server = createServer(app);
@@ -451,20 +473,27 @@ const startServer = (port: number) => {
 startServer(PORT);
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down...');
-  terminalService.cleanup();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+const gracefulShutdown = async (signal: string) => {
+  console.log(`${signal} received, shutting down...`);
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down...');
+  // Cleanup terminal service
   terminalService.cleanup();
+
+  // Disconnect all MCP servers
+  try {
+    const mcpManager = getMcpServerManager();
+    await mcpManager.disconnectAll();
+    console.log('[Server] MCP servers disconnected');
+  } catch (error) {
+    console.error('[Server] Error disconnecting MCP servers:', error);
+  }
+
+  // Close HTTP server
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
   });
-});
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

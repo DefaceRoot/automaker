@@ -1,0 +1,1 @@
+Now let me get more details on specific route files, schemas, and examples to make the documentation more comprehensive:Let me now read key files to get detailed information about the API structure, types, and schemas:

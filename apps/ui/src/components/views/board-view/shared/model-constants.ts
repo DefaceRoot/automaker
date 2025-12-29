@@ -1,4 +1,4 @@
-import type { AgentModel, ThinkingLevel } from '@/store/app-store';
+import type { AgentModel, ThinkingLevel } from '@automaker/types';
 import { Brain, Zap, Scale, Cpu, Rocket, Sparkles } from 'lucide-react';
 
 export type ModelOption = {
@@ -6,7 +6,7 @@ export type ModelOption = {
   label: string;
   description: string;
   badge?: string;
-  provider: 'claude';
+  provider: 'claude' | 'zai';
 };
 
 export const CLAUDE_MODELS: ModelOption[] = [
@@ -23,6 +23,13 @@ export const CLAUDE_MODELS: ModelOption[] = [
     description: 'Balanced performance with strong reasoning.',
     badge: 'Balanced',
     provider: 'claude',
+  },
+  {
+    id: 'GLM-4.7',
+    label: 'GLM 4.7',
+    description: 'Fast coding model for implementation.',
+    badge: 'Fast',
+    provider: 'zai',
   },
   {
     id: 'opus',

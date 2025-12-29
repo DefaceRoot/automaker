@@ -41,6 +41,8 @@ interface KanbanBoardProps {
   onImplement: (feature: Feature) => void;
   onViewPlan: (feature: Feature) => void;
   onApprovePlan: (feature: Feature) => void;
+  onSpawnTask?: (feature: Feature) => void;
+  onStageChanges?: (feature: Feature) => void;
   featuresWithContext: Set<string>;
   runningAutoTasks: string[];
   shortcuts: ReturnType<typeof useKeyboardShortcutsConfig>;
@@ -73,6 +75,8 @@ export function KanbanBoard({
   onImplement,
   onViewPlan,
   onApprovePlan,
+  onSpawnTask,
+  onStageChanges,
   featuresWithContext,
   runningAutoTasks,
   shortcuts,
@@ -117,7 +121,7 @@ export function KanbanBoard({
                       data-testid="archive-all-verified-button"
                     >
                       <Archive className="w-3 h-3 mr-1" />
-                      Archive All
+                      Complete All
                     </Button>
                   ) : column.id === 'backlog' ? (
                     <div className="flex items-center gap-1">
@@ -184,7 +188,10 @@ export function KanbanBoard({
                         onImplement={() => onImplement(feature)}
                         onViewPlan={() => onViewPlan(feature)}
                         onApprovePlan={() => onApprovePlan(feature)}
+                        onSpawnTask={() => onSpawnTask?.(feature)}
+                        onStageChanges={() => onStageChanges?.(feature)}
                         hasContext={featuresWithContext.has(feature.id)}
+                        hasWorktree={!!feature.branchName}
                         isCurrentAutoTask={runningAutoTasks.includes(feature.id)}
                         shortcutKey={shortcutKey}
                         opacity={backgroundSettings.cardOpacity}

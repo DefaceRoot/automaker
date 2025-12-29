@@ -222,6 +222,8 @@ export async function syncSettingsToServer(): Promise<boolean> {
       defaultAIProfileId: state.defaultAIProfileId,
       muteDoneSound: state.muteDoneSound,
       enhancementModel: state.enhancementModel,
+      validationModel: state.validationModel,
+      autoLoadClaudeMd: state.autoLoadClaudeMd,
       keyboardShortcuts: state.keyboardShortcuts,
       aiProfiles: state.aiProfiles,
       projects: state.projects,
@@ -257,6 +259,7 @@ export async function syncCredentialsToServer(apiKeys: {
   anthropic?: string;
   google?: string;
   openai?: string;
+  zai?: string;
 }): Promise<boolean> {
   if (!isElectron()) return false;
 
@@ -300,6 +303,7 @@ export async function syncProjectSettingsToServer(
       hasChanges?: boolean;
       changedFilesCount?: number;
     }>;
+    worktreeSetupScript?: string;
   }
 ): Promise<boolean> {
   if (!isElectron()) return false;

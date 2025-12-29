@@ -20,6 +20,10 @@ out/
 # AI Assistant directories
 .auto-claude/
 .serena/
+.cursor/
+.claude/
+.claude_settings.json
+cursor-*.log
 
 .worktrees/
 
@@ -82,5 +86,7 @@ blob-report/
 
 # Misc
 *.pem
+*.key
+*.crt
 
 docker-compose.override.yml

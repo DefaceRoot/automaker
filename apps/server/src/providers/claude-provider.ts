@@ -1,7 +1,7 @@
 /**
  * Claude Provider - Executes queries using Claude Agent SDK
  *
- * Wraps the @anthropic-ai/claude-agent-sdk for seamless integration
+ * Wraps @anthropic-ai/claude-agent-sdk for seamless integration
  * with the provider architecture.
  */
 
@@ -30,14 +30,24 @@ export class ClaudeProvider extends BaseProvider {
       systemPrompt,
       maxTurns = 20,
       allowedTools,
+      mcpServers,
       abortController,
       conversationHistory,
       sdkSessionId,
+      providerConfig,
     } = options;
 
     // Build Claude SDK options
     const defaultTools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebSearch', 'WebFetch'];
     const toolsToUse = allowedTools || defaultTools;
+
+    // Log MCP server configuration if present
+    if (mcpServers && Object.keys(mcpServers).length > 0) {
+      const serverNames = Object.keys(mcpServers);
+      console.log(`[ClaudeProvider] Loading MCP servers: [${serverNames.join(', ')}]`);
+    } else {
+      console.log('[ClaudeProvider] No MCP servers configured for this query');
+    }
 
     const sdkOptions: Options = {
       model,
@@ -55,6 +65,12 @@ export class ClaudeProvider extends BaseProvider {
       ...(sdkSessionId && conversationHistory && conversationHistory.length > 0
         ? { resume: sdkSessionId }
         : {}),
+      // Forward settingSources for CLAUDE.md file loading
+      ...(options.settingSources && { settingSources: options.settingSources }),
+      // Inject environment variables if provided via providerConfig
+      ...(providerConfig?.env ? { env: providerConfig.env } : {}),
+      // Pass MCP servers to SDK if configured
+      ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
     };
 
     // Build prompt payload
@@ -88,6 +104,32 @@ export class ClaudeProvider extends BaseProvider {
         yield msg as ProviderMessage;
       }
     } catch (error) {
+      // Check if this is a JSON parse error from the SDK receiving plain text from CLI
+      if (error instanceof SyntaxError && error.message.includes('JSON')) {
+        // Extract the problematic text from the error message if possible
+        const match = error.message.match(/"([^"]+)"/);
+        const snippet = match ? match[1] : 'unknown';
+
+        // Common CLI error patterns
+        if (snippet.toLowerCase().startsWith('claude')) {
+          console.error(
+            '[ClaudeProvider] Claude CLI returned plain text instead of JSON. ' +
+              'This usually indicates an authentication, billing, or configuration issue.'
+          );
+          console.error(`[ClaudeProvider] CLI output started with: "${snippet}..."`);
+
+          // Create a more helpful error
+          const helpfulError = new Error(
+            `Claude CLI error: The CLI returned a message instead of executing the query. ` +
+              `This may indicate an authentication issue, insufficient credits, or rate limiting. ` +
+              `Please verify your Claude authentication by running 'claude login' in your terminal. ` +
+              `Original error snippet: "${snippet}..."`
+          );
+          helpfulError.name = 'ClaudeCLIError';
+          throw helpfulError;
+        }
+      }
+
       console.error('[ClaudeProvider] executeQuery() error during execution:', error);
       throw error;
     }
@@ -163,6 +205,18 @@ export class ClaudeProvider extends BaseProvider {
         supportsVision: true,
         supportsTools: true,
         tier: 'basic' as const,
+      },
+      {
+        id: 'GLM-4.7',
+        name: 'GLM 4.7',
+        modelString: 'GLM-4.7',
+        provider: 'zai',
+        description: 'GLM Coding Plan model via Z.AI endpoint',
+        contextWindow: 200000,
+        maxOutputTokens: 16000,
+        supportsVision: true,
+        supportsTools: true,
+        tier: 'premium' as const,
       },
     ] satisfies ModelDefinition[];
     return models;

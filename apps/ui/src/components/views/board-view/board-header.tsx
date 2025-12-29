@@ -1,10 +1,11 @@
 import { HotkeyButton } from '@/components/ui/hotkey-button';
+import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Plus, Bot } from 'lucide-react';
+import { Plus, Bot, Wand2 } from 'lucide-react';
 import { KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
-import { ClaudeUsagePopover } from '@/components/claude-usage-popover';
+import { BoardUsageDisplay } from './board-usage-display';
 import { useAppStore } from '@/store/app-store';
 
 interface BoardHeaderProps {
@@ -15,6 +16,7 @@ interface BoardHeaderProps {
   isAutoModeRunning: boolean;
   onAutoModeToggle: (enabled: boolean) => void;
   onAddFeature: () => void;
+  onOpenPlanDialog: () => void;
   addFeatureShortcut: KeyboardShortcut;
   isMounted: boolean;
 }
@@ -27,16 +29,15 @@ export function BoardHeader({
   isAutoModeRunning,
   onAutoModeToggle,
   onAddFeature,
+  onOpenPlanDialog,
   addFeatureShortcut,
   isMounted,
 }: BoardHeaderProps) {
   const apiKeys = useAppStore((state) => state.apiKeys);
 
   // Hide usage tracking when using API key (only show for Claude Code CLI users)
-  // Also hide on Windows for now (CLI usage command not supported)
-  const isWindows =
-    typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('win');
-  const showUsageTracking = !apiKeys.anthropic && !isWindows;
+  // Windows is now supported via node-pty and ccusage fallback
+  const showUsageTracking = !apiKeys.anthropic;
 
   return (
     <div className="flex items-center justify-between p-4 border-b border-border bg-glass backdrop-blur-md">
@@ -45,8 +46,8 @@ export function BoardHeader({
         <p className="text-sm text-muted-foreground">{projectName}</p>
       </div>
       <div className="flex gap-2 items-center">
-        {/* Usage Popover - only show for CLI users (not API key users) */}
-        {isMounted && showUsageTracking && <ClaudeUsagePopover />}
+        {/* Usage Display - only show for CLI users (not API key users) */}
+        {isMounted && showUsageTracking && <BoardUsageDisplay />}
 
         {/* Concurrency Slider - only show after mount to prevent hydration issues */}
         {isMounted && (
@@ -88,6 +89,16 @@ export function BoardHeader({
             />
           </div>
         )}
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onOpenPlanDialog}
+          data-testid="plan-backlog-button"
+        >
+          <Wand2 className="w-4 h-4 mr-2" />
+          Plan
+        </Button>
 
         <HotkeyButton
           size="sm"

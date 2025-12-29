@@ -17,3 +17,11 @@ export {
   generateDiffsForNonGitDirectory,
   getGitRepositoryDiffs,
 } from './diff.js';
+
+// Export merge preview utilities
+export {
+  parseMergeTreeOutput,
+  classifyConflict,
+  type MergeConflict,
+  type MergePreviewResult,
+} from './merge-preview.js';

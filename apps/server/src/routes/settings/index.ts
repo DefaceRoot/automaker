@@ -23,6 +23,12 @@ import { createGetProjectHandler } from './routes/get-project.js';
 import { createUpdateProjectHandler } from './routes/update-project.js';
 import { createMigrateHandler } from './routes/migrate.js';
 import { createStatusHandler } from './routes/status.js';
+import {
+  createTestMcpServerHandler,
+  createTestAllMcpServersHandler,
+} from './routes/test-mcp-server.js';
+import { createGetMcpConfigHandler } from './routes/get-mcp-config.js';
+import { createUpdateMcpConfigHandler } from './routes/update-mcp-config.js';
 
 /**
  * Create settings router with all endpoints
@@ -39,6 +45,8 @@ import { createStatusHandler } from './routes/status.js';
  * - POST /project - Get project settings (requires projectPath in body)
  * - PUT /project - Update project settings
  * - POST /migrate - Migrate settings from localStorage
+ * - POST /mcp-servers/test - Test a single MCP server connection
+ * - POST /mcp-servers/test-all - Test all configured MCP servers
  *
  * @param settingsService - Instance of SettingsService for file I/O
  * @returns Express Router configured with all settings endpoints
@@ -71,6 +79,14 @@ export function createSettingsRoutes(settingsService: SettingsService): Router {
 
   // Migration from localStorage
   router.post('/migrate', createMigrateHandler(settingsService));
+
+  // MCP server testing
+  router.post('/mcp-servers/test', createTestMcpServerHandler(settingsService));
+  router.post('/mcp-servers/test-all', createTestAllMcpServersHandler(settingsService));
+
+  // MCP config JSON editing (raw JSON import/export)
+  router.get('/mcp-config', createGetMcpConfigHandler(settingsService));
+  router.put('/mcp-config', createUpdateMcpConfigHandler(settingsService));
 
   return router;
 }

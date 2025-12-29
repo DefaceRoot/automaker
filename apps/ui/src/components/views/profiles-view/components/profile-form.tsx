@@ -8,7 +8,7 @@ import { cn, modelSupportsThinking } from '@/lib/utils';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Brain } from 'lucide-react';
 import { toast } from 'sonner';
-import type { AIProfile, AgentModel, ThinkingLevel } from '@/store/app-store';
+import type { AIProfile, AgentModel, ThinkingLevel } from '@automaker/types';
 import { CLAUDE_MODELS, THINKING_LEVELS, ICON_OPTIONS } from '../constants';
 import { getProviderFromModel } from '../utils';
 
@@ -31,17 +31,30 @@ export function ProfileForm({
     name: profile.name || '',
     description: profile.description || '',
     model: profile.model || ('opus' as AgentModel),
+    planningModel: (profile as any).planningModel || ('opus' as AgentModel),
     thinkingLevel: profile.thinkingLevel || ('none' as ThinkingLevel),
     icon: profile.icon || 'Brain',
+    implementationEndpointPreset:
+      (profile as any).implementationEndpointPreset || ('default' as 'default' | 'zai' | 'custom'),
+    implementationEndpointUrl: (profile as any).implementationEndpointUrl || '',
   });
 
   const provider = getProviderFromModel(formData.model);
-  const supportsThinking = modelSupportsThinking(formData.model);
+  const supportsThinking = modelSupportsThinking(formData.planningModel);
 
-  const handleModelChange = (model: AgentModel) => {
+  const handleImplementationModelChange = (model: AgentModel) => {
     setFormData({
       ...formData,
       model,
+      // Auto-set endpoint preset to ZAI when GLM-4.7 is selected
+      implementationEndpointPreset: model === 'glm-4.7' ? 'zai' : 'default',
+    });
+  };
+
+  const handlePlanningModelChange = (model: AgentModel) => {
+    setFormData({
+      ...formData,
+      planningModel: model,
     });
   };
 
@@ -51,14 +64,23 @@ export function ProfileForm({
       return;
     }
 
+    // If implementation model is GLM-4.7, ensure endpoint preset is set appropriately
+    let endpointPreset = formData.implementationEndpointPreset;
+    if (formData.model === 'glm-4.7' && endpointPreset === 'default') {
+      endpointPreset = 'zai';
+    }
+
     onSave({
       name: formData.name.trim(),
       description: formData.description.trim(),
       model: formData.model,
+      planningModel: formData.planningModel,
       thinkingLevel: supportsThinking ? formData.thinkingLevel : 'none',
       provider,
       isBuiltIn: false,
       icon: formData.icon,
+      implementationEndpointPreset: endpointPreset,
+      implementationEndpointUrl: formData.implementationEndpointUrl || undefined,
     });
   };
 
@@ -113,25 +135,52 @@ export function ProfileForm({
           </div>
         </div>
 
-        {/* Model Selection */}
+        {/* Planning Model Selection */}
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
             <Brain className="w-4 h-4 text-primary" />
-            Model
+            Planning Model
+          </Label>
+          <div className="flex gap-2 flex-wrap">
+            {CLAUDE_MODELS.filter(({ id }) => id !== 'glm-4.7') // GLM is implementation-only
+              .map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => handlePlanningModelChange(id)}
+                  className={cn(
+                    'flex-1 min-w-[100px] px-3 py-2 rounded-md border text-sm font-medium transition-colors',
+                    formData.planningModel === id
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background hover:bg-accent border-border'
+                  )}
+                  data-testid={`planning-model-select-${id}`}
+                >
+                  {label.replace('Claude ', '')}
+                </button>
+              ))}
+          </div>
+        </div>
+
+        {/* Implementation Model Selection */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <Brain className="w-4 h-4 text-primary" />
+            Implementation Model
           </Label>
           <div className="flex gap-2 flex-wrap">
             {CLAUDE_MODELS.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => handleModelChange(id)}
+                onClick={() => handleImplementationModelChange(id)}
                 className={cn(
                   'flex-1 min-w-[100px] px-3 py-2 rounded-md border text-sm font-medium transition-colors',
                   formData.model === id
                     ? 'bg-primary text-primary-foreground border-primary'
                     : 'bg-background hover:bg-accent border-border'
                 )}
-                data-testid={`model-select-${id}`}
+                data-testid={`implementation-model-select-${id}`}
               >
                 {label.replace('Claude ', '')}
               </button>
@@ -139,12 +188,45 @@ export function ProfileForm({
           </div>
         </div>
 
-        {/* Thinking Level */}
+        {/* Implementation Endpoint Configuration */}
+        <div className="space-y-2">
+          <Label>Implementation Endpoint</Label>
+          <div className="space-y-2">
+            <select
+              value={formData.implementationEndpointPreset}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  implementationEndpointPreset: e.target.value as 'default' | 'zai' | 'custom',
+                })
+              }
+              className="w-full px-3 py-2 rounded-md border bg-background text-sm"
+              data-testid="endpoint-preset-select"
+            >
+              <option value="default">Automatic (based on model)</option>
+              <option value="zai">Z.AI (GLM-4.7)</option>
+              <option value="custom">Custom</option>
+            </select>
+
+            {formData.implementationEndpointPreset === 'custom' && (
+              <Input
+                value={formData.implementationEndpointUrl}
+                onChange={(e) =>
+                  setFormData({ ...formData, implementationEndpointUrl: e.target.value })
+                }
+                placeholder="https://api.example.com/v1"
+                data-testid="custom-endpoint-input"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Thinking Level - applies to planning model */}
         {supportsThinking && (
           <div className="space-y-2">
             <Label className="flex items-center gap-2">
               <Brain className="w-4 h-4 text-amber-500" />
-              Thinking Level
+              Planning Thinking Level
             </Label>
             <div className="flex gap-2 flex-wrap">
               {THINKING_LEVELS.map(({ id, label }) => (

@@ -47,6 +47,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Window management
   updateMinWidth: (sidebarExpanded: boolean): Promise<void> =>
     ipcRenderer.invoke('window:updateMinWidth', sidebarExpanded),
+
+  // Dev server preview window
+  openDevServerPreview: (
+    url: string,
+    title?: string
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('window:openDevServerPreview', url, title),
 });
 
 console.log('[Preload] Electron API exposed (TypeScript)');

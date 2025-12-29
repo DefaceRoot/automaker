@@ -33,6 +33,9 @@ export interface Feature {
   dependencies?: string[];
   spec?: string;
   model?: string;
+  planningModel?: string;
+  implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+  implementationEndpointUrl?: string;
   imagePaths?: Array<string | FeatureImagePath | { path: string; [key: string]: unknown }>;
   textFilePaths?: FeatureTextFilePath[];
   // Branch info - worktree path is derived at runtime from branchName
@@ -40,7 +43,9 @@ export interface Feature {
   skipTests?: boolean;
   thinkingLevel?: string;
   planningMode?: PlanningMode;
+  enabledMcpServers?: string[]; // IDs of MCP servers enabled for this task
   requirePlanApproval?: boolean;
+  trackedFiles?: string[]; // Files modified by this specific task (relative paths)
   planSpec?: {
     status: 'pending' | 'generating' | 'generated' | 'approved' | 'rejected';
     content?: string;

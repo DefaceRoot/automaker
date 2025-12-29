@@ -17,10 +17,21 @@ export interface WorktreeInfo {
   pr?: WorktreePRInfo;
 }
 
+export interface WorktreeGroup {
+  folderPath: string;
+  folderName: string;
+  worktrees: WorktreeInfo[];
+}
+
 export interface BranchInfo {
   name: string;
   isCurrent: boolean;
   isRemote: boolean;
+}
+
+export interface GitRepoStatus {
+  isGitRepo: boolean;
+  hasCommits: boolean;
 }
 
 export interface DevServerInfo {

@@ -7,6 +7,9 @@
 export type {
   ProviderConfig,
   ConversationMessage,
+  StdioMcpSdkConfig,
+  HttpMcpSdkConfig,
+  McpSdkConfig,
   ExecuteOptions,
   ContentBlock,
   ProviderMessage,
@@ -52,6 +55,14 @@ export type {
   PlanningMode,
   ThinkingLevel,
   ModelProvider,
+  McpTransportType,
+  WorktreeCategory,
+  StdioMcpConfig,
+  HttpMcpConfig,
+  McpToolInfo,
+  McpServerStatus,
+  McpTestResult,
+  McpServerConfig,
   KeyboardShortcuts,
   AIProfile,
   ProjectRef,
@@ -81,3 +92,42 @@ export {
   THINKING_LEVEL_LABELS,
   getModelDisplayName,
 } from './model-display.js';
+
+// Issue validation types
+export type {
+  IssueValidationVerdict,
+  IssueValidationConfidence,
+  IssueComplexity,
+  IssueValidationInput,
+  IssueValidationRequest,
+  IssueValidationResult,
+  IssueValidationResponse,
+  IssueValidationErrorResponse,
+  IssueValidationEvent,
+  StoredValidation,
+} from './issue-validation.js';
+
+// Backlog plan types
+export type {
+  BacklogChange,
+  DependencyUpdate,
+  BacklogPlanResult,
+  BacklogPlanEvent,
+  BacklogPlanRequest,
+  BacklogPlanApplyResult,
+} from './backlog-plan.js';
+
+// MCP server types and constants
+export type {
+  MCPTransportType,
+  MCPServerConfig,
+  MCPServerStatus,
+  MCPServerState,
+  MCPServerTool,
+  MCPServerResource,
+  MCPServersConfiguration,
+  MCPServerRegistrationResult,
+  MCPServerEventType,
+  MCPServerEventPayload,
+} from './mcp.js';
+export { DEFAULT_MCP_SERVERS_CONFIGURATION, MCP_SERVERS_CONFIG_VERSION } from './mcp.js';

@@ -65,11 +65,14 @@ const eslintConfig = defineConfig([
         ClipboardEvent: 'readonly',
         WheelEvent: 'readonly',
         DataTransfer: 'readonly',
+        MouseEvent: 'readonly',
+        MediaQueryListEvent: 'readonly',
         // Web APIs
         ResizeObserver: 'readonly',
         AbortSignal: 'readonly',
         Audio: 'readonly',
         ScrollBehavior: 'readonly',
+        XMLHttpRequest: 'readonly',
         // Timers
         setTimeout: 'readonly',
         setInterval: 'readonly',
@@ -81,6 +84,7 @@ const eslintConfig = defineConfig([
         __dirname: 'readonly',
         __filename: 'readonly',
         NodeJS: 'readonly',
+        Buffer: 'readonly',
         // React
         React: 'readonly',
         JSX: 'readonly',

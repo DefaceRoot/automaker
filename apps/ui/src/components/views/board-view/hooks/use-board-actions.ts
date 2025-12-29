@@ -7,7 +7,11 @@ import {
   PlanningMode,
   useAppStore,
 } from '@/store/app-store';
-import { FeatureImagePath as DescriptionImagePath } from '@/components/ui/description-image-dropzone';
+import type { WorktreeCategory } from '@automaker/types';
+import {
+  FeatureImagePath as DescriptionImagePath,
+  FeatureTextFilePath as DescriptionTextFilePath,
+} from '@/components/ui/description-image-dropzone';
 import { getElectronAPI } from '@/lib/electron';
 import { toast } from 'sonner';
 import { useAutoMode } from '@/hooks/use-auto-mode';
@@ -93,11 +97,17 @@ export function useBoardActions({
       imagePaths: DescriptionImagePath[];
       skipTests: boolean;
       model: AgentModel;
+      planningModel?: AgentModel;
       thinkingLevel: ThinkingLevel;
       branchName: string;
       priority: number;
       planningMode: PlanningMode;
       requirePlanApproval: boolean;
+      dependencies?: string[];
+      implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+      implementationEndpointUrl?: string;
+      enabledMcpServers?: string[];
+      worktreeCategory?: WorktreeCategory;
     }) => {
       // Empty string means "unassigned" (show only on primary worktree) - convert to undefined
       // Non-empty string is the actual branch name (for non-primary worktrees)
@@ -150,6 +160,8 @@ export function useBoardActions({
         titleGenerating: needsTitleGeneration,
         status: 'backlog' as const,
         branchName: finalBranchName,
+        dependencies: featureData.dependencies || [],
+        worktreeCategory: featureData.worktreeCategory,
       };
       const createdFeature = addFeature(newFeatureData);
       // Must await to ensure feature exists on server before user can drag it
@@ -209,12 +221,18 @@ export function useBoardActions({
         description: string;
         skipTests: boolean;
         model: AgentModel;
+        planningModel?: AgentModel;
         thinkingLevel: ThinkingLevel;
         imagePaths: DescriptionImagePath[];
+        textFilePaths: DescriptionTextFilePath[];
         branchName: string;
         priority: number;
         planningMode?: PlanningMode;
         requirePlanApproval?: boolean;
+        implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+        implementationEndpointUrl?: string;
+        enabledMcpServers?: string[];
+        worktreeCategory?: WorktreeCategory;
       }
     ) => {
       const finalBranchName = updates.branchName || undefined;
@@ -652,6 +670,77 @@ export function useBoardActions({
     [currentProject, loadFeatures]
   );
 
+  // Stage changes from feature worktree to main branch (no commit)
+  const handleStageChanges = useCallback(
+    async (
+      feature: Feature
+    ): Promise<{
+      success: boolean;
+      staged?: boolean;
+      suggestedMessage?: string;
+      diffSummary?: string;
+      filesChanged?: number;
+      insertions?: number;
+      deletions?: number;
+      error?: string;
+    } | null> => {
+      if (!currentProject) return null;
+
+      try {
+        const api = getElectronAPI();
+        if (!api?.worktree?.stageChanges) {
+          console.error('Stage Changes API not available');
+          toast.error('Stage Changes not available', {
+            description: 'This feature is not available in the current version.',
+          });
+          return null;
+        }
+
+        const result = await api.worktree.stageChanges(currentProject.path, feature.id);
+
+        if (result.success && result.staged) {
+          return {
+            success: true,
+            staged: true,
+            suggestedMessage: result.suggestedMessage,
+            diffSummary: result.diffSummary,
+            filesChanged: result.filesChanged,
+            insertions: result.insertions,
+            deletions: result.deletions,
+          };
+        } else if (result.success && !result.allConflictsResolved) {
+          toast.warning('Unresolved conflicts', {
+            description:
+              'Some conflicts could not be automatically resolved. Please resolve manually.',
+          });
+          return {
+            success: false,
+            error: result.error || 'Unresolved conflicts',
+          };
+        } else {
+          console.error('[Board] Failed to stage changes:', result.error);
+          toast.error('Failed to stage changes', {
+            description: result.error || 'An error occurred',
+          });
+          return {
+            success: false,
+            error: result.error,
+          };
+        }
+      } catch (error) {
+        console.error('[Board] Error staging changes:', error);
+        toast.error('Failed to stage changes', {
+          description: error instanceof Error ? error.message : 'An error occurred',
+        });
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An error occurred',
+        };
+      }
+    },
+    [currentProject]
+  );
+
   const handleCompleteFeature = useCallback(
     (feature: Feature) => {
       const updates = {
@@ -872,6 +961,7 @@ export function useBoardActions({
     handleSendFollowUp,
     handleCommitFeature,
     handleMergeFeature,
+    handleStageChanges,
     handleCompleteFeature,
     handleUnarchiveFeature,
     handleViewOutput,

@@ -1,7 +1,26 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import * as os from 'os';
-import * as pty from 'node-pty';
 import { ClaudeUsage } from '../routes/claude/types.js';
+
+// Dynamic import type for node-pty (loaded only when needed)
+type IPty = {
+  spawn: (
+    file: string,
+    args: string[],
+    options: {
+      name?: string;
+      cols?: number;
+      rows?: number;
+      cwd?: string;
+      env?: Record<string, string>;
+    }
+  ) => {
+    onData: (callback: (data: string) => void) => void;
+    onExit: (callback: (exit: { exitCode: number }) => void) => void;
+    write: (data: string) => void;
+    kill: () => void;
+  };
+};
 
 /**
  * Claude Usage Service
@@ -12,12 +31,18 @@ import { ClaudeUsage } from '../routes/claude/types.js';
  *
  * Platform-specific implementations:
  * - macOS: Uses 'expect' command for PTY
- * - Windows: Uses node-pty for PTY
+ * - Windows: Prefers ccusage tool, falls back to PowerShell with claude --print-usage
+ *
+ * Fallback: Uses ccusage CLI if installed (provides JSON output)
  */
 export class ClaudeUsageService {
   private claudeBinary = 'claude';
+  private ccusageBinary = 'ccusage';
   private timeout = 30000; // 30 second timeout
   private isWindows = os.platform() === 'win32';
+  private nodePtyModule: IPty | null = null;
+  private nodePtyLoadAttempted = false;
+  private nodePtyLoadError: Error | null = null;
 
   /**
    * Check if Claude CLI is available on the system
@@ -36,11 +61,170 @@ export class ClaudeUsageService {
   }
 
   /**
+   * Check if ccusage tool is available on the system
+   * ccusage provides JSON output which is much easier to parse
+   */
+  async isCcusageAvailable(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const checkCmd = this.isWindows ? 'where' : 'which';
+      const proc = spawn(checkCmd, [this.ccusageBinary]);
+      proc.on('close', (code) => {
+        resolve(code === 0);
+      });
+      proc.on('error', () => {
+        resolve(false);
+      });
+    });
+  }
+
+  /**
    * Fetch usage data by executing the Claude CLI
+   * Falls back to ccusage if the primary method fails
    */
   async fetchUsageData(): Promise<ClaudeUsage> {
-    const output = await this.executeClaudeUsageCommand();
-    return this.parseUsageOutput(output);
+    // Try ccusage first on Windows (more reliable JSON output)
+    if (this.isWindows) {
+      try {
+        const ccusageAvailable = await this.isCcusageAvailable();
+        if (ccusageAvailable) {
+          const output = await this.executeCcusageCommand();
+          return this.parseCcusageOutput(output);
+        }
+      } catch (error) {
+        // Fall through to try the Claude CLI method
+        console.log('ccusage failed, falling back to Claude CLI:', error);
+      }
+    }
+
+    // Primary method: Claude CLI
+    try {
+      const output = await this.executeClaudeUsageCommand();
+      return this.parseUsageOutput(output);
+    } catch (error) {
+      // On Windows, if Claude CLI failed and we haven't tried ccusage yet, try it now
+      if (!this.isWindows) {
+        // On non-Windows, try ccusage as fallback
+        const ccusageAvailable = await this.isCcusageAvailable();
+        if (ccusageAvailable) {
+          try {
+            const output = await this.executeCcusageCommand();
+            return this.parseCcusageOutput(output);
+          } catch {
+            // Ignore ccusage errors, throw original error
+          }
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Execute ccusage command and return JSON output
+   * ccusage is a third-party tool that provides Claude usage data in JSON format
+   */
+  private executeCcusageCommand(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+
+      // Use ccusage with JSON output format
+      const proc = spawn(this.ccusageBinary, ['--json'], {
+        env: process.env,
+      });
+
+      const timeoutId = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          proc.kill();
+          reject(new Error('ccusage command timed out'));
+        }
+      }, this.timeout);
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        clearTimeout(timeoutId);
+        if (settled) return;
+        settled = true;
+
+        if (code !== 0) {
+          reject(new Error(stderr || `ccusage exited with code ${code}`));
+        } else if (stdout.trim()) {
+          resolve(stdout);
+        } else {
+          reject(new Error('No output from ccusage command'));
+        }
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(timeoutId);
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Failed to execute ccusage: ${err.message}`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Parse ccusage JSON output
+   * Expected format varies by ccusage version, but typically:
+   * { usage: { tokens_used, tokens_total, percentage }, ... }
+   */
+  private parseCcusageOutput(jsonOutput: string): ClaudeUsage {
+    try {
+      const data = JSON.parse(jsonOutput);
+
+      // Handle different ccusage output formats
+      const usage = data.usage || data;
+      const session = usage.session || usage.current_session || {};
+      const weekly = usage.weekly || usage.current_week || {};
+      const sonnet = usage.sonnet || usage.opus || {};
+
+      return {
+        sessionTokensUsed: session.tokens_used || 0,
+        sessionLimit: session.tokens_total || session.limit || 0,
+        sessionPercentage:
+          session.percentage || this.calculatePercentage(session.tokens_used, session.tokens_total),
+        sessionResetTime: session.reset_time || this.getDefaultResetTime('session'),
+        sessionResetText: session.reset_text || '',
+
+        weeklyTokensUsed: weekly.tokens_used || 0,
+        weeklyLimit: weekly.tokens_total || weekly.limit || 0,
+        weeklyPercentage:
+          weekly.percentage || this.calculatePercentage(weekly.tokens_used, weekly.tokens_total),
+        weeklyResetTime: weekly.reset_time || this.getDefaultResetTime('weekly'),
+        weeklyResetText: weekly.reset_text || '',
+
+        sonnetWeeklyTokensUsed: sonnet.tokens_used || 0,
+        sonnetWeeklyPercentage: sonnet.percentage || 0,
+        sonnetResetText: sonnet.reset_text || '',
+
+        costUsed: data.cost?.used ?? null,
+        costLimit: data.cost?.limit ?? null,
+        costCurrency: data.cost?.currency ?? null,
+
+        lastUpdated: new Date().toISOString(),
+        userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+    } catch (error) {
+      throw new Error(`Failed to parse ccusage output: ${error}`);
+    }
+  }
+
+  /**
+   * Calculate percentage from used/total values
+   */
+  private calculatePercentage(used: number | undefined, total: number | undefined): number {
+    if (!used || !total || total === 0) return 0;
+    return Math.round((used / total) * 100);
   }
 
   /**
@@ -147,7 +331,13 @@ export class ClaudeUsageService {
   }
 
   /**
-   * Windows implementation using node-pty
+   * Windows implementation using node-pty with PowerShell
+   *
+   * The Claude CLI's /usage command requires a PTY (pseudo-terminal) to work properly.
+   * On Windows, we use PowerShell instead of cmd.exe for better terminal handling.
+   *
+   * The command `claude /usage` runs the Claude CLI with the /usage argument which
+   * displays the usage statistics in an interactive view.
    */
   private executeClaudeUsageCommandWindows(): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -157,22 +347,33 @@ export class ClaudeUsageService {
 
       const workingDirectory = process.env.USERPROFILE || os.homedir() || 'C:\\';
 
-      const ptyProcess = pty.spawn('cmd.exe', ['/c', 'claude', '/usage'], {
-        name: 'xterm-256color',
-        cols: 120,
-        rows: 30,
-        cwd: workingDirectory,
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-        } as Record<string, string>,
-      });
+      // Use PowerShell for better terminal handling on Windows
+      // The claude CLI with /usage argument opens an interactive view
+      const ptyProcess = pty.spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', 'claude /usage'],
+        {
+          name: 'xterm-256color',
+          cols: 120,
+          rows: 30,
+          cwd: workingDirectory,
+          env: {
+            ...process.env,
+            TERM: 'xterm-256color',
+          } as Record<string, string>,
+        }
+      );
 
       const timeoutId = setTimeout(() => {
         if (!settled) {
           settled = true;
           ptyProcess.kill();
-          reject(new Error('Command timed out'));
+          // If we have some output, try to use it even on timeout
+          if (output.trim() && output.includes('Current session')) {
+            resolve(output);
+          } else {
+            reject(new Error('Command timed out'));
+          }
         }
       }, this.timeout);
 
@@ -190,13 +391,23 @@ export class ClaudeUsageService {
           }, 2000);
         }
 
-        // Fallback: if we see "Esc to cancel" but haven't seen usage data yet
+        // Also check for "Esc to cancel" as an indicator
         if (!hasSeenUsageData && output.includes('Esc to cancel')) {
           setTimeout(() => {
             if (!settled) {
               ptyProcess.write('\x1b'); // Send escape key
             }
           }, 3000);
+        }
+
+        // Check for percentage left as a good indicator we have data
+        if (!hasSeenUsageData && /\d+%\s*(left|remaining)/i.test(output)) {
+          hasSeenUsageData = true;
+          setTimeout(() => {
+            if (!settled) {
+              ptyProcess.write('\x1b'); // Send escape key
+            }
+          }, 1500);
         }
       });
 
@@ -211,10 +422,16 @@ export class ClaudeUsageService {
           return;
         }
 
-        if (output.trim()) {
+        // Even with non-zero exit code, if we have usage data, use it
+        if (
+          output.trim() &&
+          (output.includes('Current session') || /\d+%\s*(left|remaining)/i.test(output))
+        ) {
           resolve(output);
         } else if (exitCode !== 0) {
           reject(new Error(`Command exited with code ${exitCode}`));
+        } else if (output.trim()) {
+          resolve(output);
         } else {
           reject(new Error('No output from claude command'));
         }

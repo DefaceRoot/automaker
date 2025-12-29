@@ -24,6 +24,8 @@ import type {
   GitHubAPI,
   GitHubIssue,
   GitHubPR,
+  IssueValidationInput,
+  IssueValidationEvent,
 } from './electron';
 import type { Message, SessionListItem } from '@/types/electron';
 import type { Feature, ClaudeUsageResponse } from '@/store/app-store';
@@ -51,7 +53,9 @@ type EventType =
   | 'agent:stream'
   | 'auto-mode:event'
   | 'suggestions:event'
-  | 'spec-regeneration:event';
+  | 'spec-regeneration:event'
+  | 'issue-validation:event'
+  | 'docs:event';
 
 type EventCallback = (payload: unknown) => void;
 
@@ -59,6 +63,101 @@ interface EnhancePromptResult {
   success: boolean;
   enhancedText?: string;
   error?: string;
+}
+
+// Docs generation types
+export type DocType =
+  | 'project-overview'
+  | 'architecture'
+  | 'api-reference'
+  | 'directory-structure'
+  | 'modules-components'
+  | 'setup-development';
+
+export type DocStatus = 'pending' | 'generating' | 'completed' | 'error' | 'stopped';
+
+export interface DocProgress {
+  docType: DocType;
+  displayName: string;
+  status: DocStatus;
+  filename: string;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface GenerationStatus {
+  isGenerating: boolean;
+  projectPath: string | null;
+  startedAt: string | null;
+  progress: DocProgress[];
+  completedCount: number;
+  totalCount: number;
+}
+
+export interface DocInfo {
+  docType: DocType;
+  displayName: string;
+  filename: string;
+  description: string;
+  exists: boolean;
+  modifiedAt?: string;
+}
+
+export type DocsEvent =
+  | {
+      type: 'docs:generation-started';
+      projectPath: string;
+      startedAt: string;
+      docTypes: Array<{ type: DocType; displayName: string; filename: string }>;
+    }
+  | {
+      type: 'docs:doc-progress';
+      projectPath: string;
+      docType: DocType;
+      displayName: string;
+      status: DocStatus;
+      filename: string;
+    }
+  | {
+      type: 'docs:doc-completed';
+      projectPath: string;
+      docType: DocType;
+      displayName: string;
+      filename: string;
+      completedAt: string;
+    }
+  | {
+      type: 'docs:doc-error';
+      projectPath: string;
+      docType: DocType;
+      displayName: string;
+      filename: string;
+      error: string;
+      stopped: boolean;
+    }
+  | {
+      type: 'docs:generation-completed';
+      projectPath: string;
+      completedAt: string;
+      successCount: number;
+      errorCount: number;
+      totalCount: number;
+      wasStopped: boolean;
+    };
+
+export interface DocsAPI {
+  generate: (projectPath: string, model?: string) => Promise<{ success: boolean; error?: string }>;
+  stop: (projectPath: string) => Promise<{ success: boolean; stopped?: boolean; error?: string }>;
+  list: (projectPath: string) => Promise<{ success: boolean; docs?: DocInfo[]; error?: string }>;
+  getContent: (
+    projectPath: string,
+    docType: DocType
+  ) => Promise<{ success: boolean; content?: string; error?: string }>;
+  status: (
+    projectPath: string
+  ) => Promise<{ success: boolean; status?: GenerationStatus; error?: string }>;
+  onEvent: (callback: (event: DocsEvent) => void) => () => void;
 }
 
 /**
@@ -199,6 +298,19 @@ export class HttpApiClient implements ElectronAPI {
 
   async openExternalLink(url: string): Promise<{ success: boolean; error?: string }> {
     // Open in new tab
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return { success: true };
+  }
+
+  async openDevServerPreview(
+    url: string,
+    title?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    // Use native Electron API if available (we're in Electron)
+    if (typeof window !== 'undefined' && window.electronAPI?.openDevServerPreview) {
+      return window.electronAPI.openDevServerPreview(url, title);
+    }
+    // Fallback to browser for web mode
     window.open(url, '_blank', 'noopener,noreferrer');
     return { success: true };
   }
@@ -475,6 +587,7 @@ export class HttpApiClient implements ElectronAPI {
       success: boolean;
       hasAnthropicKey: boolean;
       hasGoogleKey: boolean;
+      hasZaiKey: boolean;
     }> => this.get('/api/setup/api-keys'),
 
     getPlatform: (): Promise<{
@@ -494,6 +607,14 @@ export class HttpApiClient implements ElectronAPI {
       authenticated: boolean;
       error?: string;
     }> => this.post('/api/setup/verify-claude-auth', { authMethod }),
+
+    verifyZaiAuth: (
+      apiKey?: string
+    ): Promise<{
+      success: boolean;
+      authenticated: boolean;
+      error?: string;
+    }> => this.post('/api/setup/verify-zai-auth', { apiKey }),
 
     getGhStatus: (): Promise<{
       success: boolean;
@@ -669,6 +790,12 @@ export class HttpApiClient implements ElectronAPI {
     listDevServers: () => this.post('/api/worktree/list-dev-servers', {}),
     getPRInfo: (worktreePath: string, branchName: string) =>
       this.post('/api/worktree/pr-info', { worktreePath, branchName }),
+    stageChanges: (projectPath: string, featureId: string, options?: { targetBranch?: string }) =>
+      this.post('/api/worktree/stage', {
+        projectPath,
+        featureId,
+        ...options,
+      }),
   };
 
   // Git API
@@ -731,6 +858,21 @@ export class HttpApiClient implements ElectronAPI {
     },
   };
 
+  // Docs API
+  docs: DocsAPI = {
+    generate: (projectPath: string, model?: string) =>
+      this.post('/api/docs/generate', { projectPath, model }),
+    stop: (projectPath: string) => this.post('/api/docs/stop', { projectPath }),
+    list: (projectPath: string) => this.post('/api/docs/list', { projectPath }),
+    getContent: (projectPath: string, docType: DocType) =>
+      this.post('/api/docs/content', { projectPath, docType }),
+    status: (projectPath: string) =>
+      this.get(`/api/docs/status?projectPath=${encodeURIComponent(projectPath)}`),
+    onEvent: (callback: (event: DocsEvent) => void) => {
+      return this.subscribeToEvent('docs:event', callback as EventCallback);
+    },
+  };
+
   // Running Agents API
   runningAgents = {
     getAll: (): Promise<{
@@ -751,6 +893,18 @@ export class HttpApiClient implements ElectronAPI {
     checkRemote: (projectPath: string) => this.post('/api/github/check-remote', { projectPath }),
     listIssues: (projectPath: string) => this.post('/api/github/issues', { projectPath }),
     listPRs: (projectPath: string) => this.post('/api/github/prs', { projectPath }),
+    validateIssue: (projectPath: string, issue: IssueValidationInput, model?: string) =>
+      this.post('/api/github/validate-issue', { projectPath, ...issue, model }),
+    getValidationStatus: (projectPath: string, issueNumber?: number) =>
+      this.post('/api/github/validation-status', { projectPath, issueNumber }),
+    stopValidation: (projectPath: string, issueNumber: number) =>
+      this.post('/api/github/validation-stop', { projectPath, issueNumber }),
+    getValidations: (projectPath: string, issueNumber?: number) =>
+      this.post('/api/github/validations', { projectPath, issueNumber }),
+    markValidationViewed: (projectPath: string, issueNumber: number) =>
+      this.post('/api/github/validation-mark-viewed', { projectPath, issueNumber }),
+    onValidationEvent: (callback: (event: IssueValidationEvent) => void) =>
+      this.subscribeToEvent('issue-validation:event', callback as EventCallback),
   };
 
   // Workspace API
@@ -814,6 +968,47 @@ export class HttpApiClient implements ElectronAPI {
     onStream: (callback: (data: unknown) => void): (() => void) => {
       return this.subscribeToEvent('agent:stream', callback as EventCallback);
     },
+
+    // Queue management
+    queueAdd: (
+      sessionId: string,
+      message: string,
+      imagePaths?: string[],
+      model?: string
+    ): Promise<{
+      success: boolean;
+      queuedPrompt?: {
+        id: string;
+        message: string;
+        imagePaths?: string[];
+        model?: string;
+        addedAt: string;
+      };
+      error?: string;
+    }> => this.post('/api/agent/queue/add', { sessionId, message, imagePaths, model }),
+
+    queueList: (
+      sessionId: string
+    ): Promise<{
+      success: boolean;
+      queue?: Array<{
+        id: string;
+        message: string;
+        imagePaths?: string[];
+        model?: string;
+        addedAt: string;
+      }>;
+      error?: string;
+    }> => this.post('/api/agent/queue/list', { sessionId }),
+
+    queueRemove: (
+      sessionId: string,
+      promptId: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      this.post('/api/agent/queue/remove', { sessionId, promptId }),
+
+    queueClear: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
+      this.post('/api/agent/queue/clear', { sessionId }),
   };
 
   // Templates API
@@ -889,18 +1084,20 @@ export class HttpApiClient implements ElectronAPI {
         anthropic: { configured: boolean; masked: string };
         google: { configured: boolean; masked: string };
         openai: { configured: boolean; masked: string };
+        zai: { configured: boolean; masked: string };
       };
       error?: string;
     }> => this.get('/api/settings/credentials'),
 
     updateCredentials: (updates: {
-      apiKeys?: { anthropic?: string; google?: string; openai?: string };
+      apiKeys?: { anthropic?: string; google?: string; openai?: string; zai?: string };
     }): Promise<{
       success: boolean;
       credentials?: {
         anthropic: { configured: boolean; masked: string };
         google: { configured: boolean; masked: string };
         openai: { configured: boolean; masked: string };
+        zai: { configured: boolean; masked: string };
       };
       error?: string;
     }> => this.put('/api/settings/credentials', updates),
@@ -934,6 +1131,7 @@ export class HttpApiClient implements ElectronAPI {
           hideScrollbar: boolean;
         };
         lastSelectedSessionId?: string;
+        worktreeSetupScript?: string;
       };
       error?: string;
     }> => this.post('/api/settings/project', { projectPath }),
@@ -961,6 +1159,61 @@ export class HttpApiClient implements ElectronAPI {
       migratedProjectCount: number;
       errors: string[];
     }> => this.post('/api/settings/migrate', { data }),
+
+    // MCP Server Testing
+    testMcpServer: (
+      config?: unknown,
+      serverId?: string,
+      timeoutMs?: number
+    ): Promise<{
+      success: boolean;
+      result?: {
+        success: boolean;
+        status: 'connected' | 'failed' | 'timeout';
+        serverInfo?: { name: string; version: string };
+        tools?: Array<{ name: string; description?: string; inputSchema?: object }>;
+        error?: string;
+        latencyMs: number;
+        testedAt: string;
+      };
+      error?: string;
+    }> => this.post('/api/settings/mcp-servers/test', { config, serverId, timeoutMs }),
+
+    testAllMcpServers: (
+      timeoutMs?: number
+    ): Promise<{
+      success: boolean;
+      results?: Record<
+        string,
+        {
+          success: boolean;
+          status: 'connected' | 'failed' | 'timeout';
+          serverInfo?: { name: string; version: string };
+          tools?: Array<{ name: string; description?: string; inputSchema?: object }>;
+          error?: string;
+          latencyMs: number;
+          testedAt: string;
+        }
+      >;
+      error?: string;
+    }> => this.post('/api/settings/mcp-servers/test-all', { timeoutMs }),
+
+    // MCP Config JSON editing (raw JSON import/export)
+    getMcpConfig: (): Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }> => this.get('/api/settings/mcp-config'),
+
+    updateMcpConfig: (
+      config: string
+    ): Promise<{
+      success: boolean;
+      config?: string;
+      servers?: unknown[];
+      error?: string;
+    }> => this.put('/api/settings/mcp-config', { config }),
   };
 
   // Sessions API
@@ -1029,6 +1282,46 @@ export class HttpApiClient implements ElectronAPI {
       description?: string;
       error?: string;
     }> => this.post('/api/context/describe-file', { filePath }),
+  };
+
+  // Backlog Plan API
+  backlogPlan = {
+    generate: (
+      projectPath: string,
+      prompt: string,
+      model?: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      this.post('/api/backlog-plan/generate', { projectPath, prompt, model }),
+
+    stop: (): Promise<{ success: boolean; error?: string }> =>
+      this.post('/api/backlog-plan/stop', {}),
+
+    status: (): Promise<{ success: boolean; isRunning?: boolean; error?: string }> =>
+      this.get('/api/backlog-plan/status'),
+
+    apply: (
+      projectPath: string,
+      plan: {
+        changes: Array<{
+          type: 'add' | 'update' | 'delete';
+          featureId?: string;
+          feature?: Record<string, unknown>;
+          reason: string;
+        }>;
+        summary: string;
+        dependencyUpdates: Array<{
+          featureId: string;
+          removedDependencies: string[];
+          addedDependencies: string[];
+        }>;
+      },
+      targetBranch?: string
+    ): Promise<{ success: boolean; appliedChanges?: string[]; error?: string }> =>
+      this.post('/api/backlog-plan/apply', { projectPath, plan, targetBranch }),
+
+    onEvent: (callback: (data: unknown) => void): (() => void) => {
+      return this.subscribeToEvent('backlog-plan:event', callback as EventCallback);
+    },
   };
 }
 

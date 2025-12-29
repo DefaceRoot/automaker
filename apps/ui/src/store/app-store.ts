@@ -4,9 +4,12 @@ import type { Project, TrashedProject } from '@/lib/electron';
 import type {
   Feature as BaseFeature,
   FeatureImagePath,
+  FeatureTextFilePath,
   AgentModel,
   PlanningMode,
   AIProfile,
+  McpServerConfig,
+  WorktreeCategory,
 } from '@automaker/types';
 
 // Re-export ThemeMode for convenience
@@ -47,10 +50,13 @@ export type ThemeMode =
 
 export type KanbanCardDetailLevel = 'minimal' | 'standard' | 'detailed';
 
+export type BoardViewMode = 'kanban' | 'graph';
+
 export interface ApiKeys {
   anthropic: string;
   google: string;
   openai: string;
+  zai: string;
 }
 
 // Keyboard Shortcut with optional modifiers
@@ -262,6 +268,7 @@ export interface Feature extends Omit<
   description: string;
   steps: string[]; // Required in UI (not optional)
   status: 'backlog' | 'in_progress' | 'waiting_approval' | 'verified' | 'completed';
+  worktreeCategory?: WorktreeCategory; // Optional category for worktree folder structure (feature, bugfix, hotfix, etc.)
   images?: FeatureImage[]; // UI-specific base64 images
   imagePaths?: FeatureImagePath[]; // Stricter type than base (no string | union)
   textFilePaths?: FeatureTextFilePath[]; // Text file attachments for context
@@ -290,6 +297,13 @@ export interface PlanSpec {
   tasksTotal?: number;
   currentTaskId?: string; // ID of the task currently being worked on
   tasks?: ParsedTask[]; // Parsed tasks from the spec
+}
+
+// Documentation generation progress for each document type
+export interface DocProgress {
+  docType: string; // e.g., 'project-overview', 'architecture', 'api-reference'
+  status: 'pending' | 'running' | 'completed' | 'error';
+  message?: string; // Optional message (error details or progress info)
 }
 
 // File tree node for project analysis
@@ -431,10 +445,12 @@ export interface AppState {
     }
   >;
   autoModeActivityLog: AutoModeActivity[];
+  lastToolCallByFeature: Record<string, string>; // featureId -> ISO timestamp of last tool call (for idle detection)
   maxConcurrency: number; // Maximum number of concurrent agent tasks
 
   // Kanban Card Display Settings
   kanbanCardDetailLevel: KanbanCardDetailLevel; // Level of detail shown on kanban cards
+  boardViewMode: BoardViewMode; // Whether to show kanban or dependency graph view
 
   // Feature Default Settings
   defaultSkipTests: boolean; // Default value for skip tests when creating new features
@@ -460,6 +476,9 @@ export interface AppState {
   // AI Profiles
   aiProfiles: AIProfile[];
 
+  // MCP Server Configuration
+  mcpServers: McpServerConfig[];
+
   // Profile Display Settings
   showProfilesOnly: boolean; // When true, hide model tweaking options and show only profile selection
 
@@ -471,6 +490,12 @@ export interface AppState {
 
   // Enhancement Model Settings
   enhancementModel: AgentModel; // Model used for feature enhancement (default: sonnet)
+
+  // Validation Model Settings
+  validationModel: AgentModel; // Model used for GitHub issue validation (default: opus)
+
+  // Claude Agent SDK Settings
+  autoLoadClaudeMd: boolean; // Auto-load CLAUDE.md files using SDK's settingSources option
 
   // Project Analysis
   projectAnalysis: ProjectAnalysis | null;
@@ -491,6 +516,10 @@ export interface AppState {
       hideScrollbar: boolean; // Whether to hide the board scrollbar
     }
   >;
+
+  // Worktree Setup Script (per-project, keyed by project path)
+  // Script that runs automatically after creating a new worktree (e.g., "npm install")
+  worktreeSetupScriptByProject: Record<string, string>;
 
   // Theme Preview (for hover preview in theme selectors)
   previewTheme: ThemeMode | null;
@@ -523,6 +552,10 @@ export interface AppState {
   claudeRefreshInterval: number; // Refresh interval in seconds (default: 60)
   claudeUsage: ClaudeUsage | null;
   claudeUsageLastUpdated: number | null;
+
+  // Documentation Generation State (per-project)
+  docsGeneratingByProject: Record<string, boolean>; // projectPath -> isGenerating
+  docsProgressByProject: Record<string, DocProgress[]>; // projectPath -> array of doc progress
 }
 
 // Claude Usage interface matching the server response
@@ -695,9 +728,13 @@ export interface AppActions {
   addAutoModeActivity: (activity: Omit<AutoModeActivity, 'id' | 'timestamp'>) => void;
   clearAutoModeActivity: () => void;
   setMaxConcurrency: (max: number) => void;
+  setLastToolCall: (featureId: string, timestamp: string) => void;
+  getLastToolCall: (featureId: string) => string | null;
+  clearLastToolCall: (featureId: string) => void;
 
   // Kanban Card Settings actions
   setKanbanCardDetailLevel: (level: KanbanCardDetailLevel) => void;
+  setBoardViewMode: (mode: BoardViewMode) => void;
 
   // Feature Default Settings actions
   setDefaultSkipTests: (skip: boolean) => void;
@@ -741,12 +778,27 @@ export interface AppActions {
   // Enhancement Model actions
   setEnhancementModel: (model: AgentModel) => void;
 
+  // Validation Model actions
+  setValidationModel: (model: AgentModel) => void;
+
+  // Claude Agent SDK Settings actions
+  setAutoLoadClaudeMd: (enabled: boolean) => Promise<void>;
+
   // AI Profile actions
   addAIProfile: (profile: Omit<AIProfile, 'id'>) => void;
   updateAIProfile: (id: string, updates: Partial<AIProfile>) => void;
   removeAIProfile: (id: string) => void;
   reorderAIProfiles: (oldIndex: number, newIndex: number) => void;
   resetAIProfiles: () => void;
+
+  // MCP Server actions
+  setMcpServers: (servers: McpServerConfig[]) => void;
+  addMcpServer: (server: Omit<McpServerConfig, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updateMcpServer: (
+    id: string,
+    updates: Partial<Omit<McpServerConfig, 'id' | 'createdAt'>>
+  ) => void;
+  deleteMcpServer: (id: string) => void;
 
   // Project Analysis actions
   setProjectAnalysis: (analysis: ProjectAnalysis | null) => void;
@@ -777,6 +829,10 @@ export interface AppActions {
   setCardBorderOpacity: (projectPath: string, opacity: number) => void;
   setHideScrollbar: (projectPath: string, hide: boolean) => void;
   clearBoardBackground: (projectPath: string) => void;
+
+  // Worktree Setup Script actions
+  setWorktreeSetupScript: (projectPath: string, script: string) => void;
+  getWorktreeSetupScript: (projectPath: string) => string;
 
   // Terminal actions
   setTerminalUnlocked: (unlocked: boolean, token?: string) => void;
@@ -837,6 +893,16 @@ export interface AppActions {
     } | null
   ) => void;
 
+  // Documentation Generation actions
+  setDocsGenerating: (projectPath: string, generating: boolean) => void;
+  setDocProgress: (
+    projectPath: string,
+    docType: string,
+    status: DocProgress['status'],
+    message?: string
+  ) => void;
+  clearDocsProgress: (projectPath: string) => void;
+
   // Reset
   reset: () => void;
 }
@@ -849,30 +915,36 @@ const DEFAULT_AI_PROFILES: AIProfile[] = [
     description:
       'Claude Opus with Ultrathink for complex architecture, migrations, or deep debugging.',
     model: 'opus',
+    planningModel: 'opus',
     thinkingLevel: 'ultrathink',
     provider: 'claude',
     isBuiltIn: true,
     icon: 'Brain',
+    implementationEndpointPreset: 'default',
   },
   {
     id: 'profile-balanced',
     name: 'Balanced',
     description: 'Claude Sonnet with medium thinking for typical development tasks.',
     model: 'sonnet',
+    planningModel: 'sonnet',
     thinkingLevel: 'medium',
     provider: 'claude',
     isBuiltIn: true,
     icon: 'Scale',
+    implementationEndpointPreset: 'default',
   },
   {
     id: 'profile-quick-edit',
     name: 'Quick Edit',
     description: 'Claude Haiku for fast, simple edits and minor fixes.',
     model: 'haiku',
+    planningModel: 'haiku',
     thinkingLevel: 'none',
     provider: 'claude',
     isBuiltIn: true,
     icon: 'Zap',
+    implementationEndpointPreset: 'default',
   },
 ];
 
@@ -893,14 +965,17 @@ const initialState: AppState = {
     anthropic: '',
     google: '',
     openai: '',
+    zai: '',
   },
   chatSessions: [],
   currentChatSession: null,
   chatHistoryOpen: false,
   autoModeByProject: {},
   autoModeActivityLog: [],
+  lastToolCallByFeature: {},
   maxConcurrency: 3, // Default to 3 concurrent agents
   kanbanCardDetailLevel: 'standard', // Default to standard detail level
+  boardViewMode: 'kanban', // Default to kanban view
   defaultSkipTests: true, // Default to manual verification (tests disabled)
   enableDependencyBlocking: true, // Default to enabled (show dependency blocking UI)
   useWorktrees: false, // Default to disabled (worktree feature is experimental)
@@ -910,10 +985,14 @@ const initialState: AppState = {
   keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS, // Default keyboard shortcuts
   muteDoneSound: false, // Default to sound enabled (not muted)
   enhancementModel: 'sonnet', // Default to sonnet for feature enhancement
+  validationModel: 'opus', // Default to opus for GitHub issue validation
+  autoLoadClaudeMd: false, // Default to disabled (user must opt-in)
   aiProfiles: DEFAULT_AI_PROFILES,
+  mcpServers: [],
   projectAnalysis: null,
   isAnalyzing: false,
   boardBackgroundByProject: {},
+  worktreeSetupScriptByProject: {},
   previewTheme: null,
   terminalState: {
     isUnlocked: false,
@@ -936,6 +1015,11 @@ const initialState: AppState = {
   defaultRequirePlanApproval: false,
   defaultAIProfileId: null,
   pendingPlanApproval: null,
+  claudeRefreshInterval: 60,
+  claudeUsage: null,
+  claudeUsageLastUpdated: null,
+  docsGeneratingByProject: {},
+  docsProgressByProject: {},
 };
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -1449,8 +1533,25 @@ export const useAppStore = create<AppState & AppActions>()(
 
       setMaxConcurrency: (max) => set({ maxConcurrency: max }),
 
+      // Last Tool Call tracking (for idle timer)
+      setLastToolCall: (featureId, timestamp) => {
+        const current = get().lastToolCallByFeature;
+        set({ lastToolCallByFeature: { ...current, [featureId]: timestamp } });
+      },
+
+      getLastToolCall: (featureId) => {
+        return get().lastToolCallByFeature[featureId] || null;
+      },
+
+      clearLastToolCall: (featureId) => {
+        const current = get().lastToolCallByFeature;
+        const { [featureId]: _, ...rest } = current;
+        set({ lastToolCallByFeature: rest });
+      },
+
       // Kanban Card Settings actions
       setKanbanCardDetailLevel: (level) => set({ kanbanCardDetailLevel: level }),
+      setBoardViewMode: (mode) => set({ boardViewMode: mode }),
 
       // Feature Default Settings actions
       setDefaultSkipTests: (skip) => set({ defaultSkipTests: skip }),
@@ -1531,6 +1632,17 @@ export const useAppStore = create<AppState & AppActions>()(
       // Enhancement Model actions
       setEnhancementModel: (model) => set({ enhancementModel: model }),
 
+      // Validation Model actions
+      setValidationModel: (model) => set({ validationModel: model }),
+
+      // Claude Agent SDK Settings actions
+      setAutoLoadClaudeMd: async (enabled) => {
+        set({ autoLoadClaudeMd: enabled });
+        // Sync to server settings file
+        const { syncSettingsToServer } = await import('@/hooks/use-settings-migration');
+        await syncSettingsToServer();
+      },
+
       // AI Profile actions
       addAIProfile: (profile) => {
         const id = `profile-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -1569,6 +1681,31 @@ export const useAppStore = create<AppState & AppActions>()(
           (p) => !p.isBuiltIn && !defaultProfileIds.has(p.id)
         );
         set({ aiProfiles: [...DEFAULT_AI_PROFILES, ...userProfiles] });
+      },
+
+      // MCP Server actions
+      setMcpServers: (servers) => set({ mcpServers: servers }),
+
+      addMcpServer: (server) => {
+        const id = `mcp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const now = new Date().toISOString();
+        set({
+          mcpServers: [...get().mcpServers, { ...server, id, createdAt: now, updatedAt: now }],
+        });
+      },
+
+      updateMcpServer: (id, updates) => {
+        set({
+          mcpServers: get().mcpServers.map((server) =>
+            server.id === id
+              ? { ...server, ...updates, updatedAt: new Date().toISOString() }
+              : server
+          ),
+        });
+      },
+
+      deleteMcpServer: (id) => {
+        set({ mcpServers: get().mcpServers.filter((server) => server.id !== id) });
       },
 
       // Project Analysis actions
@@ -1741,6 +1878,21 @@ export const useAppStore = create<AppState & AppActions>()(
             },
           },
         });
+      },
+
+      // Worktree Setup Script actions
+      setWorktreeSetupScript: (projectPath, script) => {
+        const current = get().worktreeSetupScriptByProject;
+        set({
+          worktreeSetupScriptByProject: {
+            ...current,
+            [projectPath]: script,
+          },
+        });
+      },
+
+      getWorktreeSetupScript: (projectPath) => {
+        return get().worktreeSetupScriptByProject[projectPath] || '';
       },
 
       // Terminal actions
@@ -2545,12 +2697,56 @@ export const useAppStore = create<AppState & AppActions>()(
           claudeUsageLastUpdated: usage ? Date.now() : null,
         }),
 
+      // Documentation Generation actions
+      setDocsGenerating: (projectPath, generating) => {
+        const current = get().docsGeneratingByProject;
+        set({
+          docsGeneratingByProject: {
+            ...current,
+            [projectPath]: generating,
+          },
+        });
+      },
+
+      setDocProgress: (projectPath, docType, status, message) => {
+        const current = get().docsProgressByProject;
+        const projectProgress = current[projectPath] || [];
+        const existingIndex = projectProgress.findIndex((p) => p.docType === docType);
+        const newProgress: DocProgress = { docType, status, message };
+
+        let updatedProgress: DocProgress[];
+        if (existingIndex >= 0) {
+          updatedProgress = [...projectProgress];
+          updatedProgress[existingIndex] = newProgress;
+        } else {
+          updatedProgress = [...projectProgress, newProgress];
+        }
+
+        set({
+          docsProgressByProject: {
+            ...current,
+            [projectPath]: updatedProgress,
+          },
+        });
+      },
+
+      clearDocsProgress: (projectPath) => {
+        const currentGenerating = get().docsGeneratingByProject;
+        const currentProgress = get().docsProgressByProject;
+        const { [projectPath]: _gen, ...restGenerating } = currentGenerating;
+        const { [projectPath]: _prog, ...restProgress } = currentProgress;
+        set({
+          docsGeneratingByProject: restGenerating,
+          docsProgressByProject: restProgress,
+        });
+      },
+
       // Reset
       reset: () => set(initialState),
     }),
     {
       name: 'automaker-storage',
-      version: 2, // Increment when making breaking changes to persisted state
+      version: 3, // Increment when making breaking changes to persisted state
       // Custom merge function to properly restore terminal settings on every load
       // The default shallow merge doesn't work because we persist terminalSettings
       // separately from terminalState (to avoid persisting session data like tabs)
@@ -2614,6 +2810,24 @@ export const useAppStore = create<AppState & AppActions>()(
           }
         }
 
+        // Migration from version 2 to version 3:
+        // - Fix GLM model name from lowercase 'glm-4.7' to uppercase 'GLM-4.7'
+        if (version <= 2) {
+          // Fix enhancementModel
+          if ((state.enhancementModel as string) === 'glm-4.7') {
+            state.enhancementModel = 'GLM-4.7';
+          }
+          // Fix model in AI profiles
+          if (state.aiProfiles) {
+            state.aiProfiles = state.aiProfiles.map((profile) => ({
+              ...profile,
+              model: profile.model === 'glm-4.7' ? 'GLM-4.7' : profile.model,
+              planningModel:
+                profile.planningModel === 'glm-4.7' ? 'GLM-4.7' : profile.planningModel,
+            }));
+          }
+        }
+
         // Rehydrate terminal settings from persisted state
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const persistedSettings = (state as any).terminalSettings as
@@ -2658,6 +2872,7 @@ export const useAppStore = create<AppState & AppActions>()(
           sidebarOpen: state.sidebarOpen,
           chatHistoryOpen: state.chatHistoryOpen,
           kanbanCardDetailLevel: state.kanbanCardDetailLevel,
+          boardViewMode: state.boardViewMode,
           // Settings
           apiKeys: state.apiKeys,
           maxConcurrency: state.maxConcurrency,
@@ -2672,12 +2887,17 @@ export const useAppStore = create<AppState & AppActions>()(
           keyboardShortcuts: state.keyboardShortcuts,
           muteDoneSound: state.muteDoneSound,
           enhancementModel: state.enhancementModel,
-          // Profiles and sessions
+          validationModel: state.validationModel,
+          autoLoadClaudeMd: state.autoLoadClaudeMd,
+          // Profiles, MCP servers, and sessions
           aiProfiles: state.aiProfiles,
+          mcpServers: state.mcpServers,
           chatSessions: state.chatSessions,
           lastSelectedSessionByProject: state.lastSelectedSessionByProject,
           // Board background settings
           boardBackgroundByProject: state.boardBackgroundByProject,
+          // Worktree setup script (per-project)
+          worktreeSetupScriptByProject: state.worktreeSetupScriptByProject,
           // Terminal layout persistence (per-project)
           terminalLayoutByProject: state.terminalLayoutByProject,
           // Terminal settings persistence (global)

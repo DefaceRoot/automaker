@@ -130,7 +130,7 @@ describe('node-finder', () => {
     const delimiter = path.delimiter;
 
     it("should return current path unchanged when nodePath is 'node'", () => {
-      const currentPath = '/usr/bin:/usr/local/bin';
+      const currentPath = `/usr/bin${delimiter}/usr/local/bin`;
       const result = buildEnhancedPath('node', currentPath);
 
       expect(result).toBe(currentPath);
@@ -144,7 +144,7 @@ describe('node-finder', () => {
 
     it('should prepend node directory to path', () => {
       const nodePath = '/opt/homebrew/bin/node';
-      const currentPath = '/usr/bin:/usr/local/bin';
+      const currentPath = `/usr/bin${delimiter}/usr/local/bin`;
 
       const result = buildEnhancedPath(nodePath, currentPath);
 
@@ -152,12 +152,27 @@ describe('node-finder', () => {
     });
 
     it('should not duplicate node directory if already in path', () => {
+      // Use platform-appropriate paths and delimiter
+      const isWindows = process.platform === 'win32';
+      const delimiter = path.delimiter;
       const nodePath = '/usr/local/bin/node';
-      const currentPath = '/usr/local/bin:/usr/bin';
+      const currentPath = `/usr/local/bin${delimiter}/usr/bin`;
 
-      const result = buildEnhancedPath(nodePath, currentPath);
+      if (isWindows) {
+        const nodePath = 'C:\\Program Files\\nodejs\\node.exe';
+        const currentPath = `C:\\Program Files\\nodejs${delimiter}C:\\Windows\\System32`;
 
-      expect(result).toBe(currentPath);
+        const result = buildEnhancedPath(nodePath, currentPath);
+
+        expect(result).toBe(currentPath);
+      } else {
+        const nodePath = '/usr/local/bin/node';
+        const currentPath = `/usr/local/bin${delimiter}/usr/bin`;
+
+        const result = buildEnhancedPath(nodePath, currentPath);
+
+        expect(result).toBe(currentPath);
+      }
     });
 
     it('should handle empty currentPath without trailing delimiter', () => {

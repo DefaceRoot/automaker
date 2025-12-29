@@ -1,5 +1,6 @@
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   FlaskConical,
   Settings2,
@@ -12,6 +13,8 @@ import {
   ScrollText,
   ShieldCheck,
   User,
+  Sparkles,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -22,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { AIProfile } from '@/store/app-store';
+import type { AgentModel } from '@automaker/types';
 
 type PlanningMode = 'skip' | 'lite' | 'spec' | 'full';
 
@@ -34,6 +38,9 @@ interface FeatureDefaultsSectionProps {
   defaultRequirePlanApproval: boolean;
   defaultAIProfileId: string | null;
   aiProfiles: AIProfile[];
+  validationModel: AgentModel;
+  worktreeSetupScript: string;
+  hasProject: boolean;
   onShowProfilesOnlyChange: (value: boolean) => void;
   onDefaultSkipTestsChange: (value: boolean) => void;
   onEnableDependencyBlockingChange: (value: boolean) => void;
@@ -41,6 +48,8 @@ interface FeatureDefaultsSectionProps {
   onDefaultPlanningModeChange: (value: PlanningMode) => void;
   onDefaultRequirePlanApprovalChange: (value: boolean) => void;
   onDefaultAIProfileIdChange: (value: string | null) => void;
+  onValidationModelChange: (value: AgentModel) => void;
+  onWorktreeSetupScriptChange: (value: string) => void;
 }
 
 export function FeatureDefaultsSection({
@@ -52,6 +61,9 @@ export function FeatureDefaultsSection({
   defaultRequirePlanApproval,
   defaultAIProfileId,
   aiProfiles,
+  validationModel,
+  worktreeSetupScript,
+  hasProject,
   onShowProfilesOnlyChange,
   onDefaultSkipTestsChange,
   onEnableDependencyBlockingChange,
@@ -59,6 +71,8 @@ export function FeatureDefaultsSection({
   onDefaultPlanningModeChange,
   onDefaultRequirePlanApprovalChange,
   onDefaultAIProfileIdChange,
+  onValidationModelChange,
+  onWorktreeSetupScriptChange,
 }: FeatureDefaultsSectionProps) {
   // Find the selected profile name for display
   const selectedProfile = defaultAIProfileId
@@ -227,6 +241,45 @@ export function FeatureDefaultsSection({
         {/* Separator */}
         <div className="border-t border-border/30" />
 
+        {/* Issue Validation Model */}
+        <div className="group flex items-start space-x-3 p-3 rounded-xl hover:bg-accent/30 transition-colors duration-200 -mx-3">
+          <div className="w-10 h-10 mt-0.5 rounded-xl flex items-center justify-center shrink-0 bg-purple-500/10">
+            <Sparkles className="w-5 h-5 text-purple-500" />
+          </div>
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-foreground font-medium">Issue Validation Model</Label>
+              <Select
+                value={validationModel}
+                onValueChange={(v: string) => onValidationModelChange(v as AgentModel)}
+              >
+                <SelectTrigger className="w-[140px] h-8" data-testid="validation-model-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="opus">
+                    <span>Opus</span>
+                    <span className="text-[10px] text-muted-foreground ml-1">(Default)</span>
+                  </SelectItem>
+                  <SelectItem value="sonnet">
+                    <span>Sonnet</span>
+                  </SelectItem>
+                  <SelectItem value="haiku">
+                    <span>Haiku</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground/80 leading-relaxed">
+              Model used for validating GitHub issues. Opus provides the most thorough analysis,
+              while Haiku is faster and more cost-effective.
+            </p>
+          </div>
+        </div>
+
+        {/* Separator */}
+        <div className="border-t border-border/30" />
+
         {/* Profiles Only Setting */}
         <div className="group flex items-start space-x-3 p-3 rounded-xl hover:bg-accent/30 transition-colors duration-200 -mx-3">
           <Checkbox
@@ -335,6 +388,36 @@ export function FeatureDefaultsSection({
             </p>
           </div>
         </div>
+
+        {/* Worktree Setup Script - only shown when worktrees are enabled and a project is selected */}
+        {useWorktrees && hasProject && (
+          <>
+            <div className="border-t border-border/30" />
+            <div className="group flex items-start space-x-3 p-3 rounded-xl hover:bg-accent/30 transition-colors duration-200 -mx-3">
+              <div className="w-10 h-10 mt-0.5 rounded-xl flex items-center justify-center shrink-0 bg-emerald-500/10">
+                <Terminal className="w-5 h-5 text-emerald-500" />
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-foreground font-medium">Worktree Setup Script</Label>
+                </div>
+                <Input
+                  id="worktree-setup-script"
+                  type="text"
+                  placeholder="e.g., npm install"
+                  value={worktreeSetupScript}
+                  onChange={(e) => onWorktreeSetupScriptChange(e.target.value)}
+                  className="h-8 text-sm"
+                  data-testid="worktree-setup-script-input"
+                />
+                <p className="text-xs text-muted-foreground/80 leading-relaxed">
+                  Command to run automatically after creating a new worktree (e.g., install
+                  dependencies). This is a project-specific setting.
+                </p>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -236,7 +236,7 @@ export async function selectIcon(page: Page, iconName: string): Promise<void> {
 
 /**
  * Select a model for the profile
- * @param modelId - Model ID: haiku, sonnet, opus
+ * @param modelId - Model ID: haiku, sonnet, glm-4.7, opus
  */
 export async function selectModel(page: Page, modelId: string): Promise<void> {
   await clickElement(page, `model-select-${modelId}`);
@@ -357,7 +357,7 @@ export async function getProfileDescription(page: Page, profileId: string): Prom
 export async function getProfileModel(page: Page, profileId: string): Promise<string> {
   const card = await getProfileCard(page, profileId);
   const modelBadge = card.locator(
-    'span[class*="border-primary"]:has-text("haiku"), span[class*="border-primary"]:has-text("sonnet"), span[class*="border-primary"]:has-text("opus")'
+    'span[class*="border-primary"]:has-text("haiku"), span[class*="border-primary"]:has-text("sonnet"), span[class*="border-primary"]:has-text("glm-4.7"), span[class*="border-primary"]:has-text("opus")'
   );
   return await modelBadge.textContent().then((text) => text?.trim() || '');
 }

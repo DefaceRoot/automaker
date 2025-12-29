@@ -550,8 +550,8 @@ Resets in 2h
 
       expect(result.sessionPercentage).toBe(35);
       expect(pty.spawn).toHaveBeenCalledWith(
-        'cmd.exe',
-        ['/c', 'claude', '/usage'],
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', 'claude /usage'],
         expect.any(Object)
       );
     });
@@ -639,6 +639,215 @@ Resets in 2h
       expect(mockPty.kill).toHaveBeenCalled();
 
       vi.useRealTimers();
+    });
+  });
+
+  describe('isCcusageAvailable', () => {
+    it('should return true when ccusage is available', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      const service = new ClaudeUsageService();
+
+      mockSpawnProcess.on.mockImplementation((event: string, callback: Function) => {
+        if (event === 'close') {
+          callback(0);
+        }
+        return mockSpawnProcess;
+      });
+
+      const result = await service.isCcusageAvailable();
+
+      expect(result).toBe(true);
+      expect(spawn).toHaveBeenCalledWith('which', ['ccusage']);
+    });
+
+    it('should return false when ccusage is not available', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      const service = new ClaudeUsageService();
+
+      mockSpawnProcess.on.mockImplementation((event: string, callback: Function) => {
+        if (event === 'close') {
+          callback(1);
+        }
+        return mockSpawnProcess;
+      });
+
+      const result = await service.isCcusageAvailable();
+
+      expect(result).toBe(false);
+    });
+
+    it('should use where command on Windows', async () => {
+      vi.mocked(os.platform).mockReturnValue('win32');
+      const windowsService = new ClaudeUsageService();
+
+      mockSpawnProcess.on.mockImplementation((event: string, callback: Function) => {
+        if (event === 'close') {
+          callback(0);
+        }
+        return mockSpawnProcess;
+      });
+
+      await windowsService.isCcusageAvailable();
+
+      expect(spawn).toHaveBeenCalledWith('where', ['ccusage']);
+    });
+  });
+
+  describe('parseCcusageOutput', () => {
+    it('should parse ccusage JSON output with usage data', () => {
+      const service = new ClaudeUsageService();
+      const jsonOutput = JSON.stringify({
+        usage: {
+          session: {
+            tokens_used: 1000,
+            tokens_total: 10000,
+            percentage: 10,
+            reset_time: '2025-01-15T15:00:00Z',
+            reset_text: 'Resets in 5h',
+          },
+          weekly: {
+            tokens_used: 5000,
+            tokens_total: 100000,
+            percentage: 5,
+            reset_time: '2025-01-20T12:00:00Z',
+            reset_text: 'Resets Mon, 12pm',
+          },
+          sonnet: {
+            tokens_used: 2000,
+            percentage: 2,
+            reset_text: 'Resets Mon, 12pm',
+          },
+        },
+        cost: {
+          used: 10.5,
+          limit: 100,
+          currency: 'USD',
+        },
+      });
+
+      // @ts-expect-error - accessing private method for testing
+      const result = service.parseCcusageOutput(jsonOutput);
+
+      expect(result.sessionTokensUsed).toBe(1000);
+      expect(result.sessionLimit).toBe(10000);
+      expect(result.sessionPercentage).toBe(10);
+      expect(result.weeklyTokensUsed).toBe(5000);
+      expect(result.weeklyLimit).toBe(100000);
+      expect(result.weeklyPercentage).toBe(5);
+      expect(result.sonnetWeeklyTokensUsed).toBe(2000);
+      expect(result.sonnetWeeklyPercentage).toBe(2);
+      expect(result.costUsed).toBe(10.5);
+      expect(result.costLimit).toBe(100);
+      expect(result.costCurrency).toBe('USD');
+    });
+
+    it('should handle alternative ccusage output format', () => {
+      const service = new ClaudeUsageService();
+      const jsonOutput = JSON.stringify({
+        current_session: {
+          tokens_used: 500,
+          limit: 5000,
+        },
+        current_week: {
+          tokens_used: 2500,
+          limit: 50000,
+        },
+      });
+
+      // @ts-expect-error - accessing private method for testing
+      const result = service.parseCcusageOutput(jsonOutput);
+
+      expect(result.sessionTokensUsed).toBe(500);
+      expect(result.sessionLimit).toBe(5000);
+      expect(result.weeklyTokensUsed).toBe(2500);
+      expect(result.weeklyLimit).toBe(50000);
+    });
+
+    it('should throw error for invalid JSON', () => {
+      const service = new ClaudeUsageService();
+
+      // @ts-expect-error - accessing private method for testing
+      expect(() => service.parseCcusageOutput('invalid json')).toThrow(
+        'Failed to parse ccusage output'
+      );
+    });
+  });
+
+  describe('calculatePercentage', () => {
+    it('should calculate percentage correctly', () => {
+      const service = new ClaudeUsageService();
+
+      // @ts-expect-error - accessing private method for testing
+      expect(service.calculatePercentage(50, 100)).toBe(50);
+      // @ts-expect-error - accessing private method for testing
+      expect(service.calculatePercentage(33, 100)).toBe(33);
+      // @ts-expect-error - accessing private method for testing
+      expect(service.calculatePercentage(1, 3)).toBe(33); // Rounded
+    });
+
+    it('should return 0 for undefined or zero values', () => {
+      const service = new ClaudeUsageService();
+
+      // @ts-expect-error - accessing private method for testing
+      expect(service.calculatePercentage(undefined, 100)).toBe(0);
+      // @ts-expect-error - accessing private method for testing
+      expect(service.calculatePercentage(50, undefined)).toBe(0);
+      // @ts-expect-error - accessing private method for testing
+      expect(service.calculatePercentage(50, 0)).toBe(0);
+    });
+  });
+
+  describe('fetchUsageData - ccusage fallback', () => {
+    it('should try ccusage first on Windows when available', async () => {
+      vi.mocked(os.platform).mockReturnValue('win32');
+      const windowsService = new ClaudeUsageService();
+
+      // First call is for isCcusageAvailable - return success
+      let spawnCallCount = 0;
+      vi.mocked(spawn).mockImplementation(((command: string, args: string[]) => {
+        spawnCallCount++;
+        const mockProc = {
+          on: vi.fn((event: string, callback: Function) => {
+            if (event === 'close') {
+              if (spawnCallCount === 1) {
+                // isCcusageAvailable check - ccusage found
+                callback(0);
+              } else {
+                // ccusage command execution - success
+                callback(0);
+              }
+            }
+            return mockProc;
+          }),
+          kill: vi.fn(),
+          stdout: {
+            on: vi.fn((event: string, callback: Function) => {
+              if (event === 'data' && spawnCallCount === 2) {
+                // Return valid JSON from ccusage
+                callback(
+                  JSON.stringify({
+                    usage: {
+                      session: { tokens_used: 1000, tokens_total: 10000, percentage: 10 },
+                      weekly: { tokens_used: 5000, tokens_total: 100000, percentage: 5 },
+                    },
+                  })
+                );
+              }
+            }),
+          },
+          stderr: {
+            on: vi.fn(),
+          },
+        };
+        return mockProc;
+      }) as any);
+
+      const result = await windowsService.fetchUsageData();
+
+      expect(result.sessionPercentage).toBe(10);
+      expect(result.weeklyPercentage).toBe(5);
+      // Should have called spawn twice: once for 'where ccusage', once for 'ccusage --json'
+      expect(spawnCallCount).toBe(2);
     });
   });
 });

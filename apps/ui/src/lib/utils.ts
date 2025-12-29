@@ -10,6 +10,10 @@ export function cn(...inputs: ClassValue[]) {
  * Determine if the current model supports extended thinking controls
  */
 export function modelSupportsThinking(_model?: AgentModel | string): boolean {
+  // GLM models do not support thinking
+  if (_model?.startsWith('glm-')) {
+    return false;
+  }
   // All Claude models support thinking
   return true;
 }
@@ -22,6 +26,7 @@ export function getModelDisplayName(model: AgentModel | string): string {
     haiku: 'Claude Haiku',
     sonnet: 'Claude Sonnet',
     opus: 'Claude Opus',
+    'glm-4.7': 'GLM 4.7',
   };
   return displayNames[model] || model;
 }

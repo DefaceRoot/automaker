@@ -1,13 +1,26 @@
 /**
  * POST /create endpoint - Create a new feature
+ *
+ * If worktrees are enabled in global settings, this will also:
+ * 1. Create an isolated git worktree for the feature
+ * 2. Use categorized naming: {category}/{number}-{slug}
+ * 3. Copy task spec files into the worktree
+ * 4. Update the feature with the branch name
  */
 
 import type { Request, Response } from 'express';
 import { FeatureLoader } from '../../../services/feature-loader.js';
+import type { SettingsService } from '../../../services/settings-service.js';
+import { worktreeLifecycleService } from '../../../services/worktree-lifecycle.js';
 import type { Feature } from '@automaker/types';
-import { getErrorMessage, logError } from '../common.js';
+import { getErrorMessage, logError, createLogger } from '../common.js';
 
-export function createCreateHandler(featureLoader: FeatureLoader) {
+const logger = createLogger('features/create');
+
+export function createCreateHandler(
+  featureLoader: FeatureLoader,
+  settingsService?: SettingsService
+) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
       const { projectPath, feature } = req.body as {
@@ -23,8 +36,43 @@ export function createCreateHandler(featureLoader: FeatureLoader) {
         return;
       }
 
+      // Create the feature first
       const created = await featureLoader.create(projectPath, feature);
-      res.json({ success: true, feature: created });
+
+      // Check if worktrees are enabled in global settings
+      let worktreeCreated = false;
+      if (settingsService) {
+        try {
+          const globalSettings = await settingsService.getGlobalSettings();
+          if (globalSettings.useWorktrees) {
+            logger.info(`Worktrees enabled, creating worktree for feature ${created.id}`);
+
+            // Create worktree for the new feature
+            const worktreeResult = await worktreeLifecycleService.createWorktreeForTask({
+              projectPath,
+              feature: created,
+              baseBranch: globalSettings.baseBranch || undefined,
+            });
+
+            logger.info(
+              `Worktree created: ${worktreeResult.worktreePath} (branch: ${worktreeResult.branchName})`
+            );
+
+            // Update created feature with branch name (the lifecycle service already updates it, but we want the response to include it)
+            created.branchName = worktreeResult.branchName;
+            worktreeCreated = true;
+          }
+        } catch (worktreeError) {
+          // Log but don't fail - worktree creation is optional
+          logger.error('Failed to create worktree for feature:', worktreeError);
+        }
+      }
+
+      res.json({
+        success: true,
+        feature: created,
+        worktreeCreated,
+      });
     } catch (error) {
       logError(error, 'Create feature failed');
       res.status(500).json({ success: false, error: getErrorMessage(error) });

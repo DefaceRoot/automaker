@@ -1,8 +1,8 @@
 /**
- * Provider Factory - Routes model IDs to the appropriate provider
+ * Provider Factory - Routes model IDs to appropriate provider
  *
  * This factory implements model-based routing to automatically select
- * the correct provider based on the model string. This makes adding
+ * correct provider based on model string. This makes adding
  * new providers (Cursor, OpenCode, etc.) trivial - just add one line.
  */
 
@@ -12,16 +12,21 @@ import type { InstallationStatus } from './types.js';
 
 export class ProviderFactory {
   /**
-   * Get the appropriate provider for a given model ID
+   * Get appropriate provider for a given model ID
    *
    * @param modelId Model identifier (e.g., "claude-opus-4-5-20251101", "gpt-5.2", "cursor-fast")
-   * @returns Provider instance for the model
+   * @returns Provider instance for model
    */
   static getProviderForModel(modelId: string): BaseProvider {
     const lowerModel = modelId.toLowerCase();
 
     // Claude models (claude-*, opus, sonnet, haiku)
     if (lowerModel.startsWith('claude-') || ['haiku', 'sonnet', 'opus'].includes(lowerModel)) {
+      return new ClaudeProvider();
+    }
+
+    // GLM models (glm-*) - use ClaudeProvider with custom env injection
+    if (lowerModel.startsWith('glm-')) {
       return new ClaudeProvider();
     }
 

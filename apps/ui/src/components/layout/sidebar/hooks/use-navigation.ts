@@ -10,6 +10,7 @@ import {
   CircleDot,
   GitPullRequest,
   Zap,
+  Files,
 } from 'lucide-react';
 import type { NavSection, NavItem } from '../types';
 import type { KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
@@ -44,6 +45,8 @@ interface UseNavigationProps {
   setIsProjectPickerOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
   cyclePrevProject: () => void;
   cycleNextProject: () => void;
+  /** Count of unviewed validations to show on GitHub Issues nav item */
+  unviewedValidationsCount?: number;
 }
 
 export function useNavigation({
@@ -61,6 +64,7 @@ export function useNavigation({
   setIsProjectPickerOpen,
   cyclePrevProject,
   cycleNextProject,
+  unviewedValidationsCount,
 }: UseNavigationProps) {
   // Track if current project has a GitHub remote
   const [hasGitHubRemote, setHasGitHubRemote] = useState(false);
@@ -106,6 +110,11 @@ export function useNavigation({
         label: 'AI Profiles',
         icon: UserCircle,
         shortcut: shortcuts.profiles,
+      },
+      {
+        id: 'docs',
+        label: 'Documents',
+        icon: Files,
       },
     ];
 
@@ -169,6 +178,7 @@ export function useNavigation({
             id: 'github-issues',
             label: 'Issues',
             icon: CircleDot,
+            count: unviewedValidationsCount,
           },
           {
             id: 'github-prs',
@@ -180,7 +190,15 @@ export function useNavigation({
     }
 
     return sections;
-  }, [shortcuts, hideSpecEditor, hideContext, hideTerminal, hideAiProfiles, hasGitHubRemote]);
+  }, [
+    shortcuts,
+    hideSpecEditor,
+    hideContext,
+    hideTerminal,
+    hideAiProfiles,
+    hasGitHubRemote,
+    unviewedValidationsCount,
+  ]);
 
   // Build keyboard shortcuts for navigation
   const navigationShortcuts: KeyboardShortcut[] = useMemo(() => {

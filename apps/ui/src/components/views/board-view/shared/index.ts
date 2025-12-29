@@ -6,3 +6,5 @@ export * from './testing-tab-content';
 export * from './priority-selector';
 export * from './branch-selector';
 export * from './planning-mode-selector';
+export * from './ancestor-context-section';
+export * from './worktree-category-selector';

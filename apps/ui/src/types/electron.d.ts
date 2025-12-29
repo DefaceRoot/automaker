@@ -447,6 +447,10 @@ export interface AutoModeAPI {
 export interface ElectronAPI {
   ping: () => Promise<string>;
   openExternalLink: (url: string) => Promise<{ success: boolean; error?: string }>;
+  openDevServerPreview: (
+    url: string,
+    title?: string
+  ) => Promise<{ success: boolean; error?: string }>;
 
   // Dialog APIs
   openDirectory: () => Promise<{
@@ -733,6 +737,7 @@ export interface WorktreeAPI {
       message: string;
     };
     error?: string;
+    code?: 'NOT_GIT_REPO' | 'NO_COMMITS';
   }>;
 
   // Create a pull request from a worktree
@@ -783,6 +788,7 @@ export interface WorktreeAPI {
       message: string;
     };
     error?: string;
+    code?: 'NOT_GIT_REPO' | 'NO_COMMITS';
   }>;
 
   // Create and checkout a new branch
@@ -797,6 +803,7 @@ export interface WorktreeAPI {
       message: string;
     };
     error?: string;
+    code?: 'NOT_GIT_REPO' | 'NO_COMMITS';
   }>;
 
   // List all local branches
@@ -813,6 +820,7 @@ export interface WorktreeAPI {
       behindCount: number;
     };
     error?: string;
+    code?: 'NOT_GIT_REPO' | 'NO_COMMITS'; // Error codes for git status issues
   }>;
 
   // Switch to an existing branch
@@ -827,6 +835,7 @@ export interface WorktreeAPI {
       message: string;
     };
     error?: string;
+    code?: 'NOT_GIT_REPO' | 'NO_COMMITS' | 'UNCOMMITTED_CHANGES';
   }>;
 
   // Open a worktree directory in the editor
@@ -932,6 +941,30 @@ export interface WorktreeAPI {
       };
       error?: string;
     };
+    error?: string;
+  }>;
+
+  // Stage changes from a feature worktree to target branch (no commit)
+  stageChanges: (
+    projectPath: string,
+    featureId: string,
+    options?: {
+      targetBranch?: string;
+    }
+  ) => Promise<{
+    success: boolean;
+    staged?: boolean;
+    conflicts?: Array<{
+      filePath: string;
+      resolved: boolean;
+      strategy?: 'auto' | 'ai' | 'manual';
+    }>;
+    allConflictsResolved?: boolean;
+    suggestedMessage?: string;
+    diffSummary?: string;
+    filesChanged?: number;
+    insertions?: number;
+    deletions?: number;
     error?: string;
   }>;
 }

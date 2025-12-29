@@ -20,19 +20,59 @@ export interface ConversationMessage {
 }
 
 /**
+ * SDK-compatible MCP server configuration for stdio transport.
+ * Matches @anthropic-ai/claude-agent-sdk McpStdioServerConfig.
+ * Note: 'type' field is optional for stdio (defaults to 'stdio').
+ */
+export interface StdioMcpSdkConfig {
+  type?: 'stdio';
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * SDK-compatible MCP server configuration for HTTP transport.
+ * Matches @anthropic-ai/claude-agent-sdk McpHttpServerConfig.
+ * Note: 'type' field is REQUIRED for HTTP configs.
+ */
+export interface HttpMcpSdkConfig {
+  type: 'http';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Union type for SDK-compatible MCP server configurations.
+ * Passed directly to Claude SDK mcpServers option.
+ */
+export type McpSdkConfig = StdioMcpSdkConfig | HttpMcpSdkConfig;
+
+/**
+ * System prompt preset configuration for CLAUDE.md auto-loading
+ */
+export interface SystemPromptPreset {
+  type: 'preset';
+  preset: 'claude_code';
+  append?: string;
+}
+
+/**
  * Options for executing a query via a provider
  */
 export interface ExecuteOptions {
   prompt: string | Array<{ type: string; text?: string; source?: object }>;
   model: string;
   cwd: string;
-  systemPrompt?: string;
+  systemPrompt?: string | SystemPromptPreset;
   maxTurns?: number;
   allowedTools?: string[];
-  mcpServers?: Record<string, unknown>;
+  mcpServers?: Record<string, McpSdkConfig>;
   abortController?: AbortController;
   conversationHistory?: ConversationMessage[]; // Previous messages for context
   sdkSessionId?: string; // Claude SDK session ID for resuming conversations
+  providerConfig?: ProviderConfig; // Provider-specific configuration (env, auth, etc.)
+  settingSources?: Array<'user' | 'project' | 'local'>; // Sources for CLAUDE.md loading
 }
 
 /**

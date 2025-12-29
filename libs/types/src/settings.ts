@@ -70,6 +70,126 @@ export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'ultrathink';
 /** ModelProvider - AI model provider for credentials and API key management */
 export type ModelProvider = 'claude';
 
+/** McpTransportType - Transport protocol used to communicate with MCP servers */
+export type McpTransportType = 'stdio' | 'http';
+
+/**
+ * WorktreeCategory - Category types for organizing worktrees
+ *
+ * Used to categorize features/tasks and determine worktree folder structure.
+ * Worktrees are created in folders matching their category (e.g., feature/001-auth-setup).
+ */
+export type WorktreeCategory = 'feature' | 'bugfix' | 'hotfix' | 'refactor' | 'chore' | 'docs';
+
+/**
+ * StdioMcpConfig - Configuration for local process-based MCP servers
+ *
+ * Stdio transport spawns a local process and communicates via stdin/stdout.
+ * Commonly used for file system access, local tools, and development servers.
+ */
+export interface StdioMcpConfig {
+  /** Transport type discriminator */
+  type: 'stdio';
+  /** Command to execute (e.g., "npx", "node", "python") */
+  command: string;
+  /** Command arguments (e.g., ["-y", "@modelcontextprotocol/server-filesystem"]) */
+  args: string[];
+  /** Optional environment variables to pass to the process */
+  env?: Record<string, string>;
+}
+
+/**
+ * HttpMcpConfig - Configuration for remote HTTP-based MCP servers
+ *
+ * HTTP transport connects to a remote MCP server over HTTP/HTTPS.
+ * Used for cloud-hosted tools, shared services, and remote integrations.
+ */
+export interface HttpMcpConfig {
+  /** Transport type discriminator */
+  type: 'http';
+  /** Server URL (e.g., "https://mcp.example.com") */
+  url: string;
+  /** Optional custom headers (e.g., for authentication) */
+  headers?: Record<string, string>;
+}
+
+/**
+ * McpToolInfo - Information about a tool discovered from an MCP server
+ *
+ * Represents a single tool exposed by an MCP server, including its name,
+ * description, and input schema for validation.
+ */
+export interface McpToolInfo {
+  /** Tool name (used for invocation, e.g., "read_file") */
+  name: string;
+  /** Human-readable description of what the tool does */
+  description?: string;
+  /** JSON Schema for tool input parameters */
+  inputSchema?: object;
+}
+
+/**
+ * McpServerStatus - Connection status for an MCP server
+ */
+export type McpServerStatus = 'connected' | 'failed' | 'timeout' | 'untested';
+
+/**
+ * McpTestResult - Result of testing an MCP server connection
+ *
+ * Stored on McpServerConfig to show connection status and available tools.
+ * Updated when the server is tested (manually or on add/edit).
+ */
+export interface McpTestResult {
+  /** Whether the connection was successful */
+  success: boolean;
+  /** Connection status */
+  status: McpServerStatus;
+  /** Server information (name, version) if connected */
+  serverInfo?: {
+    name: string;
+    version: string;
+  };
+  /** List of available tools if connected */
+  tools?: McpToolInfo[];
+  /** Error message if connection failed */
+  error?: string;
+  /** Time taken to complete the test in milliseconds */
+  latencyMs: number;
+  /** ISO timestamp of when the test was performed */
+  testedAt: string;
+}
+
+/**
+ * McpServerConfig - Complete configuration for an MCP server
+ *
+ * Represents a user-configured MCP server that can be enabled/disabled
+ * globally or on a per-task basis. Stored in global settings.
+ */
+export interface McpServerConfig {
+  /** Unique identifier for the server */
+  id: string;
+  /** Display name for the server */
+  name: string;
+  /** Optional user-friendly description */
+  description?: string;
+  /** Transport configuration (stdio or http) */
+  transport: StdioMcpConfig | HttpMcpConfig;
+  /** Whether this server is enabled by default for new tasks */
+  enabled: boolean;
+  /**
+   * Custom prompt/instructions for the AI agent.
+   * Provides high-level guidance on when and how to use this MCP server.
+   * Example: "Use this server for reading and writing files in the project directory."
+   */
+  customPrompt?: string;
+  /** ISO timestamp of when the server was created */
+  createdAt: string;
+  /** ISO timestamp of when the server was last updated */
+  updatedAt: string;
+  /** Result of the last connection test (tools, status, latency) */
+  lastTestResult?: McpTestResult;
+}
+
 /**
  * WindowBounds - Electron window position and size for persistence
  *
@@ -151,8 +271,10 @@ export interface AIProfile {
   name: string;
   /** User-friendly description */
   description: string;
-  /** Which Claude model to use (opus, sonnet, haiku) */
+  /** Which Claude model to use (opus, sonnet, haiku, glm-4.7) */
   model: AgentModel;
+  /** Optional planning model - defaults to model if not specified */
+  planningModel?: AgentModel;
   /** Extended thinking level for reasoning-based tasks */
   thinkingLevel: ThinkingLevel;
   /** Provider (currently only "claude") */
@@ -161,6 +283,10 @@ export interface AIProfile {
   isBuiltIn: boolean;
   /** Optional icon identifier or emoji */
   icon?: string;
+  /** Implementation endpoint preset configuration */
+  implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+  /** Custom endpoint URL (only when preset=custom) */
+  implementationEndpointUrl?: string;
 }
 
 /**
@@ -261,6 +387,8 @@ export interface GlobalSettings {
   // AI Model Selection
   /** Which model to use for feature name/description enhancement */
   enhancementModel: AgentModel;
+  /** Which model to use for GitHub issue validation */
+  validationModel: AgentModel;
 
   // Input Configuration
   /** User's keyboard shortcut bindings */
@@ -269,6 +397,10 @@ export interface GlobalSettings {
   // AI Profiles
   /** User-created AI profiles */
   aiProfiles: AIProfile[];
+
+  // MCP Server Configuration
+  /** User-configured MCP servers for tool integration */
+  mcpServers: McpServerConfig[];
 
   // Project Management
   /** List of active projects */
@@ -295,6 +427,10 @@ export interface GlobalSettings {
   // Window State (Electron only)
   /** Persisted window bounds for restoring position/size across sessions */
   windowBounds?: WindowBounds;
+
+  // Claude Agent SDK Settings
+  /** Auto-load CLAUDE.md files using SDK's settingSources option */
+  autoLoadClaudeMd?: boolean;
 }
 
 /**
@@ -314,6 +450,8 @@ export interface Credentials {
     google: string;
     /** OpenAI API key (for compatibility or alternative providers) */
     openai: string;
+    /** Z.AI API key (for GLM Coding Plan endpoint) */
+    zai: string;
   };
 }
 
@@ -382,6 +520,8 @@ export interface ProjectSettings {
   currentWorktree?: { path: string | null; branch: string };
   /** List of worktrees available in this project */
   worktrees?: WorktreeInfo[];
+  /** Script to run after creating a new worktree (e.g., "npm install") */
+  worktreeSetupScript?: string;
 
   // Board Customization
   /** Project-specific board background settings */
@@ -390,6 +530,10 @@ export interface ProjectSettings {
   // Session Tracking
   /** Last chat session selected in this project */
   lastSelectedSessionId?: string;
+
+  // Claude Agent SDK Settings
+  /** Auto-load CLAUDE.md files using SDK's settingSources option (project override) */
+  autoLoadClaudeMd?: boolean;
 }
 
 /**
@@ -422,7 +566,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
 
 /** Default global settings used when no settings file exists */
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
-  version: 1,
+  version: 2,
   theme: 'dark',
   sidebarOpen: true,
   chatHistoryOpen: false,
@@ -437,8 +581,10 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   defaultAIProfileId: null,
   muteDoneSound: false,
   enhancementModel: 'sonnet',
+  validationModel: 'opus',
   keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
   aiProfiles: [],
+  mcpServers: [],
   projects: [],
   trashedProjects: [],
   projectHistory: [],
@@ -447,6 +593,7 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   recentFolders: [],
   worktreePanelCollapsed: false,
   lastSelectedSessionByProject: {},
+  autoLoadClaudeMd: false,
 };
 
 /** Default credentials (empty strings - user must provide API keys) */
@@ -456,6 +603,7 @@ export const DEFAULT_CREDENTIALS: Credentials = {
     anthropic: '',
     google: '',
     openai: '',
+    zai: '',
   },
 };
 
@@ -465,7 +613,7 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
 };
 
 /** Current version of the global settings schema */
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 /** Current version of the credentials schema */
 export const CREDENTIALS_VERSION = 1;
 /** Current version of the project settings schema */

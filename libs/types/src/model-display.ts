@@ -19,8 +19,8 @@ export interface ModelOption {
   description: string;
   /** Optional badge text (e.g., "Speed", "Balanced", "Premium") */
   badge?: string;
-  /** AI provider (currently only "claude") */
-  provider: 'claude';
+  /** AI provider (claude or zai) */
+  provider: 'claude' | 'zai';
 }
 
 /**
@@ -37,6 +37,7 @@ export interface ThinkingLevelOption {
  * Claude model options with full metadata for UI display
  *
  * Ordered from fastest/cheapest (Haiku) to most capable (Opus).
+ * GLM-4.7 is positioned between Sonnet and Opus as a powerful coding model.
  */
 export const CLAUDE_MODELS: ModelOption[] = [
   {
@@ -52,6 +53,13 @@ export const CLAUDE_MODELS: ModelOption[] = [
     description: 'Balanced performance with strong reasoning.',
     badge: 'Balanced',
     provider: 'claude',
+  },
+  {
+    id: 'GLM-4.7',
+    label: 'GLM 4.7',
+    description: 'Powerful coding assistant via Z.AI endpoint.',
+    badge: 'Coding',
+    provider: 'zai',
   },
   {
     id: 'opus',
@@ -106,6 +114,7 @@ export function getModelDisplayName(model: AgentModel | string): string {
     haiku: 'Claude Haiku',
     sonnet: 'Claude Sonnet',
     opus: 'Claude Opus',
+    'GLM-4.7': 'GLM 4.7',
   };
   return displayNames[model] || model;
 }

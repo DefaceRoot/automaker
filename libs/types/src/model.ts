@@ -3,7 +3,7 @@
  */
 export const CLAUDE_MODEL_MAP: Record<string, string> = {
   haiku: 'claude-haiku-4-5-20251001',
-  sonnet: 'claude-sonnet-4-5-20250929',
+  sonnet: 'claude-sonnet-4-20250514',
   opus: 'claude-opus-4-5-20251101',
 } as const;
 
@@ -17,7 +17,7 @@ export const DEFAULT_MODELS = {
 export type ModelAlias = keyof typeof CLAUDE_MODEL_MAP;
 
 /**
- * AgentModel - Alias for ModelAlias for backward compatibility
- * Represents available Claude models: "opus" | "sonnet" | "haiku"
+ * AgentModel - Available AI models
+ * Includes Claude models and GLM models
  */
-export type AgentModel = ModelAlias;
+export type AgentModel = ModelAlias | 'GLM-4.7';

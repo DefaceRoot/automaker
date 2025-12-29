@@ -9,8 +9,7 @@
  * - Verification and merge workflows
  */
 
-import { ProviderFactory } from '../providers/provider-factory.js';
-import type { ExecuteOptions, Feature } from '@automaker/types';
+import type { ExecuteOptions, Feature, Credentials } from '@automaker/types';
 import {
   buildPromptWithImages,
   isAbortError,
@@ -20,18 +19,29 @@ import {
 import { resolveModelString, DEFAULT_MODELS } from '@automaker/model-resolver';
 import { resolveDependencies, areDependenciesSatisfied } from '@automaker/dependency-resolver';
 import { getFeatureDir, getAutomakerDir, getFeaturesDir } from '@automaker/platform';
+import { ProviderFactory } from '../providers/provider-factory.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import * as secureFs from '../lib/secure-fs.js';
 import type { EventEmitter } from '../lib/events.js';
-import { createAutoModeOptions, validateWorkingDirectory } from '../lib/sdk-options.js';
+import {
+  createAutoModeOptions,
+  createCustomOptions,
+  validateWorkingDirectory,
+} from '../lib/sdk-options.js';
+import { computeModelEnv, getZaiCredentialsError } from '../lib/env-computation.js';
 import { FeatureLoader } from './feature-loader.js';
+import { convertMcpConfigsToSdkFormat, buildMcpCustomPromptsSection } from '../lib/mcp-config.js';
+import type { SettingsService } from './settings-service.js';
+import { getAutoLoadClaudeMdSetting, filterClaudeMdFromContext } from '../lib/settings-helpers.js';
+import { getMcpTaskIsolationService, type TaskMcpContext } from './mcp-task-isolation.js';
+import { worktreeLifecycleService } from './worktree-lifecycle.js';
 
 const execAsync = promisify(exec);
 
-// Planning mode types for spec-driven development
-type PlanningMode = 'skip' | 'lite' | 'spec' | 'full';
+// Extended PlanningMode that includes internal 'lite_with_approval' variant
+type PlanningMode = 'skip' | 'lite' | 'lite_with_approval' | 'spec' | 'full';
 
 interface ParsedTask {
   id: string; // e.g., "T001"
@@ -296,7 +306,8 @@ function parseTaskLine(line: string, currentPhase?: string): ParsedTask | null {
 
 // Feature type is imported from feature-loader.js
 // Extended type with planning fields for local use
-interface FeatureWithPlanning extends Feature {
+// Use Omit to override planningMode with our extended type that includes 'lite_with_approval'
+interface FeatureWithPlanning extends Omit<Feature, 'planningMode'> {
   planningMode?: PlanningMode;
   planSpec?: PlanSpec;
   requirePlanApproval?: boolean;
@@ -341,9 +352,80 @@ export class AutoModeService {
   private autoLoopAbortController: AbortController | null = null;
   private config: AutoModeConfig | null = null;
   private pendingApprovals = new Map<string, PendingApproval>();
+  private settingsService: SettingsService | null = null;
 
-  constructor(events: EventEmitter) {
+  constructor(events: EventEmitter, settingsService?: SettingsService) {
     this.events = events;
+    this.settingsService = settingsService ?? null;
+  }
+
+  /**
+   * Get list of modified/untracked files from git status
+   * Returns array of relative file paths
+   */
+  private async getModifiedFiles(workDir: string): Promise<string[]> {
+    try {
+      const { stdout: status } = await execAsync('git status --porcelain', {
+        cwd: workDir,
+      });
+      if (!status.trim()) {
+        return [];
+      }
+      // Parse git status output - format is "XY filename" where XY is status codes
+      return status
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.slice(3).trim()) // Skip status codes and get filename
+        .filter((file) => file.length > 0);
+    } catch (error) {
+      console.error('[AutoMode] Failed to get modified files:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Track files modified by a task execution
+   * Compares files before and after execution and stores the difference
+   */
+  private async trackTaskModifiedFiles(
+    projectPath: string,
+    featureId: string,
+    filesBeforeExecution: string[],
+    workDir: string
+  ): Promise<void> {
+    try {
+      // Get files after execution
+      const filesAfterExecution = await this.getModifiedFiles(workDir);
+
+      // Calculate files that were modified by this task
+      // New files = files in after that weren't in before
+      // Modified files = all files in after (since we're looking at modified files from git status)
+      const beforeSet = new Set(filesBeforeExecution);
+      const taskModifiedFiles = filesAfterExecution.filter((file) => !beforeSet.has(file));
+
+      // Also include files that were already modified but might have additional changes
+      // For simplicity, track all files that are currently modified
+      // The key insight is: if a file was modified BEFORE this task started,
+      // it belongs to a previous task, not this one
+      const trackedFiles = taskModifiedFiles;
+
+      if (trackedFiles.length > 0) {
+        console.log(
+          `[AutoMode] Task ${featureId} modified ${trackedFiles.length} files:`,
+          trackedFiles
+        );
+
+        // Update feature with tracked files
+        await this.featureLoader.update(projectPath, featureId, {
+          trackedFiles,
+        });
+      } else {
+        console.log(`[AutoMode] Task ${featureId} did not modify any new files`);
+      }
+    } catch (error) {
+      console.error(`[AutoMode] Failed to track modified files for ${featureId}:`, error);
+      // Don't throw - this is a non-critical feature
+    }
   }
 
   /**
@@ -551,13 +633,24 @@ export class AutoModeService {
       // Update feature status to in_progress
       await this.updateFeatureStatus(projectPath, featureId, 'in_progress');
 
+      // Load autoLoadClaudeMd setting to determine context loading strategy
+      const autoLoadClaudeMd = await getAutoLoadClaudeMdSetting(
+        projectPath,
+        this.settingsService,
+        '[AutoMode]'
+      );
+
       // Build the prompt - use continuation prompt if provided (for recovery after plan approval)
       let prompt: string;
       // Load project context files (CLAUDE.md, CODE_QUALITY.md, etc.) - passed as system prompt
-      const { formattedPrompt: contextFilesPrompt } = await loadContextFiles({
+      const contextResult = await loadContextFiles({
         projectPath,
         fsModule: secureFs as Parameters<typeof loadContextFiles>[0]['fsModule'],
       });
+
+      // When autoLoadClaudeMd is enabled, filter out CLAUDE.md to avoid duplication
+      // (SDK handles CLAUDE.md via settingSources), but keep other context files like CODE_QUALITY.md
+      const contextFilesPrompt = filterClaudeMdFromContext(contextResult, autoLoadClaudeMd);
 
       if (options?.continuationPrompt) {
         // Continuation prompt is used when recovering from a plan approval
@@ -585,11 +678,21 @@ export class AutoModeService {
         typeof img === 'string' ? img : img.path
       );
 
-      // Get model from feature
-      const model = resolveModelString(feature.model, DEFAULT_MODELS.claude);
-      console.log(`[AutoMode] Executing feature ${featureId} with model: ${model} in ${workDir}`);
+      // Determine planning and implementation models
+      const planningModelStr = feature.planningModel || feature.model;
+      const planningModel = resolveModelString(planningModelStr, DEFAULT_MODELS.claude);
+      const implementationModel = resolveModelString(feature.model, DEFAULT_MODELS.claude);
 
-      // Run the agent with the feature's model and images
+      console.log(`[AutoMode] Executing feature ${featureId} in ${workDir}`);
+      console.log(`[AutoMode] Planning model: ${planningModel}`);
+      console.log(`[AutoMode] Implementation model: ${implementationModel}`);
+
+      // Capture file state BEFORE execution for tracking task-specific changes
+      const filesBeforeExecution = await this.getModifiedFiles(workDir);
+      console.log(`[AutoMode] Files before execution: ${filesBeforeExecution.length} modified`);
+
+      // Two-phase execution: planning model generates plan, implementation model executes
+      // For now, use the same single-phase flow but with proper model selection
       // Context files are passed as system prompt for higher priority
       await this.runAgent(
         workDir,
@@ -598,12 +701,17 @@ export class AutoModeService {
         abortController,
         projectPath,
         imagePaths,
-        model,
+        implementationModel,
+        planningModel,
         {
           projectPath,
           planningMode: feature.planningMode,
           requirePlanApproval: feature.requirePlanApproval,
           systemPrompt: contextFilesPrompt || undefined,
+          implementationEndpointPreset: feature.implementationEndpointPreset,
+          implementationEndpointUrl: feature.implementationEndpointUrl,
+          enabledMcpServers: feature.enabledMcpServers,
+          autoLoadClaudeMd,
         }
       );
 
@@ -746,11 +854,22 @@ export class AutoModeService {
       // No previous context
     }
 
+    // Load autoLoadClaudeMd setting to determine context loading strategy
+    const autoLoadClaudeMd = await getAutoLoadClaudeMdSetting(
+      projectPath,
+      this.settingsService,
+      '[AutoMode]'
+    );
+
     // Load project context files (CLAUDE.md, CODE_QUALITY.md, etc.) - passed as system prompt
-    const { formattedPrompt: contextFilesPrompt } = await loadContextFiles({
+    const contextResult = await loadContextFiles({
       projectPath,
       fsModule: secureFs as Parameters<typeof loadContextFiles>[0]['fsModule'],
     });
+
+    // When autoLoadClaudeMd is enabled, filter out CLAUDE.md to avoid duplication
+    // (SDK handles CLAUDE.md via settingSources), but keep other context files like CODE_QUALITY.md
+    const contextFilesPrompt = filterClaudeMdFromContext(contextResult, autoLoadClaudeMd);
 
     // Build complete prompt with feature info, previous context, and follow-up instructions
     let fullPrompt = `## Follow-up on Feature Implementation
@@ -864,7 +983,7 @@ Address the follow-up instructions above. Review the previous work and make the 
 
       // Use fullPrompt (already built above) with model and all images
       // Note: Follow-ups skip planning mode - they continue from previous work
-      // Pass previousContext so the history is preserved in the output file
+      // Pass previousContext so that history is preserved in the output file
       // Context files are passed as system prompt for higher priority
       await this.runAgent(
         workDir,
@@ -873,12 +992,15 @@ Address the follow-up instructions above. Review the previous work and make the 
         abortController,
         projectPath,
         allImagePaths.length > 0 ? allImagePaths : imagePaths,
-        model,
+        model, // 6th param: model
+        undefined, // 7th param: planningModel - not used for follow-ups
         {
           projectPath,
           planningMode: 'skip', // Follow-ups don't require approval
           previousContent: previousContext || undefined,
           systemPrompt: contextFilesPrompt || undefined,
+          enabledMcpServers: feature?.enabledMcpServers,
+          autoLoadClaudeMd,
         }
       );
 
@@ -1065,11 +1187,6 @@ Address the follow-up instructions above. Review the previous work and make the 
    * Analyze project to gather context
    */
   async analyzeProject(projectPath: string): Promise<void> {
-    // Validate project path before proceeding
-    // This is called here because analyzeProject builds ExecuteOptions directly
-    // without using a factory function from sdk-options.ts
-    validateWorkingDirectory(projectPath);
-
     const abortController = new AbortController();
 
     const analysisFeatureId = `analysis-${Date.now()}`;
@@ -1097,13 +1214,31 @@ Format your response as a structured markdown document.`;
       const analysisModel = resolveModelString(undefined, DEFAULT_MODELS.claude);
       const provider = ProviderFactory.getProviderForModel(analysisModel);
 
-      const options: ExecuteOptions = {
-        prompt,
+      // Load autoLoadClaudeMd setting
+      const autoLoadClaudeMd = await getAutoLoadClaudeMdSetting(
+        projectPath,
+        this.settingsService,
+        '[AutoMode]'
+      );
+
+      // Use createCustomOptions for centralized SDK configuration with CLAUDE.md support
+      const sdkOptions = createCustomOptions({
+        cwd: projectPath,
         model: analysisModel,
         maxTurns: 5,
-        cwd: projectPath,
         allowedTools: ['Read', 'Glob', 'Grep'],
         abortController,
+        autoLoadClaudeMd,
+      });
+
+      const options: ExecuteOptions = {
+        prompt,
+        model: sdkOptions.model ?? analysisModel,
+        cwd: sdkOptions.cwd ?? projectPath,
+        maxTurns: sdkOptions.maxTurns,
+        allowedTools: sdkOptions.allowedTools as string[],
+        abortController,
+        settingSources: sdkOptions.settingSources,
       };
 
       const stream = provider.executeQuery(options);
@@ -1468,11 +1603,14 @@ Format your response as a structured markdown document.`;
         };
       }
 
+      // Capture the existing content before applying updates
+      const oldContent = feature.planSpec?.content;
+
       // Apply updates
       Object.assign(feature.planSpec, updates);
 
       // If content is being updated and it's a new version, increment version
-      if (updates.content && updates.content !== feature.planSpec.content) {
+      if (updates.content && updates.content !== oldContent) {
         feature.planSpec.version = (feature.planSpec.version || 0) + 1;
       }
 
@@ -1702,12 +1840,17 @@ This helps parse your summary correctly in the output logs.`;
     projectPath: string,
     imagePaths?: string[],
     model?: string,
+    planningModel?: string,
     options?: {
       projectPath?: string;
       planningMode?: PlanningMode;
       requirePlanApproval?: boolean;
       previousContent?: string;
       systemPrompt?: string;
+      implementationEndpointPreset?: 'default' | 'zai' | 'custom';
+      implementationEndpointUrl?: string;
+      enabledMcpServers?: string[];
+      autoLoadClaudeMd?: boolean;
     }
   ): Promise<void> {
     const finalProjectPath = options?.projectPath || projectPath;
@@ -1780,26 +1923,76 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       return;
     }
 
+    // Load autoLoadClaudeMd setting (project setting takes precedence over global)
+    // Use provided value if available, otherwise load from settings
+    const autoLoadClaudeMd =
+      options?.autoLoadClaudeMd !== undefined
+        ? options.autoLoadClaudeMd
+        : await getAutoLoadClaudeMdSetting(finalProjectPath, this.settingsService, '[AutoMode]');
+
     // Build SDK options using centralized configuration for feature implementation
     const sdkOptions = createAutoModeOptions({
       cwd: workDir,
       model: model,
       abortController,
+      autoLoadClaudeMd,
     });
 
-    // Extract model, maxTurns, and allowedTools from SDK options
-    const finalModel = sdkOptions.model!;
-    const maxTurns = sdkOptions.maxTurns;
-    const allowedTools = sdkOptions.allowedTools as string[] | undefined;
+    // Get credentials for environment injection
+    let credentials: Credentials | null = null;
+    if (this.settingsService) {
+      try {
+        credentials = await this.settingsService.getCredentials();
+      } catch (error) {
+        console.error('[AutoMode] Failed to load credentials:', error);
+      }
+    }
 
-    console.log(
-      `[AutoMode] runAgent called for feature ${featureId} with model: ${finalModel}, planningMode: ${planningMode}, requiresApproval: ${requiresApproval}`
-    );
+    // Resolve model and prepare execution parameters
+    // finalModel = implementation model (used for task execution)
+    // finalPlanningModel = planning model (used for spec generation)
+    const finalModel = model || resolveModelString(model, DEFAULT_MODELS.claude);
+    const finalPlanningModel = planningModel || finalModel;
+    const maxTurns = 100; // Default max turns for agent execution
+    const allowedTools: string[] | undefined = ['Read', 'Glob', 'Grep']; // Default tools for auto mode
 
-    // Get provider for this model
-    const provider = ProviderFactory.getProviderForModel(finalModel);
+    // Determine which model to use for the initial stream
+    // Use planning model for spec/full modes, implementation model for skip/lite
+    const initialModel =
+      planningMode === 'spec' || planningMode === 'full' ? finalPlanningModel : finalModel;
 
-    console.log(`[AutoMode] Using provider "${provider.getName()}" for model "${finalModel}"`);
+    // Compute environment variables for Z.AI endpoint if needed
+    // We need env for the initial model (could be planning or implementation)
+    const providerConfigEnv = credentials
+      ? computeModelEnv(
+          initialModel,
+          {
+            implementationEndpointPreset: options?.implementationEndpointPreset,
+            implementationEndpointUrl: options?.implementationEndpointUrl,
+          },
+          credentials
+        )
+      : null;
+
+    // Also compute env for implementation model (used for task execution)
+    const implementationEnv = credentials
+      ? computeModelEnv(
+          finalModel,
+          {
+            implementationEndpointPreset: options?.implementationEndpointPreset,
+            implementationEndpointUrl: options?.implementationEndpointUrl,
+          },
+          credentials
+        )
+      : null;
+
+    // Hard-fail if model needs Z.AI but credentials are missing
+    if (providerConfigEnv === null && initialModel.startsWith('glm-')) {
+      throw new Error(getZaiCredentialsError());
+    }
+    if (implementationEnv === null && finalModel.startsWith('glm-')) {
+      throw new Error(getZaiCredentialsError());
+    }
 
     // Build prompt content with images using utility
     const { content: promptContent } = await buildPromptWithImages(
@@ -1816,15 +2009,103 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       );
     }
 
+    // Load and convert MCP server configuration with strict task-level isolation
+    // 1. Get global MCP configs from settings
+    // 2. Create isolated task context with only enabled servers
+    // 3. Get SDK format config from the isolated context
+    //
+    // ISOLATION: Each task gets its own TaskMcpContext which ensures:
+    // - No leakage between parallel running tasks
+    // - Each task maintains its own MCP server availability
+    // - Contexts are cleaned up when tasks complete
+    let mcpServersConfig: Record<string, import('../providers/types.js').McpSdkConfig> | undefined;
+    let taskMcpContext: TaskMcpContext | undefined;
+    let mcpServerConfigs: import('@automaker/types').McpServerConfig[] = [];
+    const taskIsolationService = getMcpTaskIsolationService();
+
+    // Generate unique task ID for this execution (featureId + timestamp for uniqueness in parallel runs)
+    const taskExecutionId = `${featureId}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    if (options?.enabledMcpServers && options.enabledMcpServers.length > 0) {
+      try {
+        if (this.settingsService) {
+          const globalSettings = await this.settingsService.getGlobalSettings();
+          const mcpServers = globalSettings.mcpServers ?? [];
+          mcpServerConfigs = mcpServers; // Store for later use in building custom prompts
+
+          if (mcpServers.length > 0) {
+            // Update the isolation service with current global server configs
+            taskIsolationService.updateGlobalServers(mcpServers);
+
+            // Create isolated task context - this ensures strict isolation boundaries
+            taskMcpContext = taskIsolationService.createTaskContext(
+              taskExecutionId,
+              featureId,
+              options.enabledMcpServers,
+              workDir
+            );
+
+            // Get the SDK configs from the isolated context
+            mcpServersConfig = taskMcpContext.sdkConfigs;
+
+            const loadedServerNames = Object.keys(mcpServersConfig);
+            if (loadedServerNames.length > 0) {
+              console.log(
+                `[AutoMode] Created isolated MCP context for task ${taskExecutionId} ` +
+                  `(feature: ${featureId}): [${loadedServerNames.join(', ')}]`
+              );
+
+              // Log isolation stats for debugging parallel execution
+              const stats = taskIsolationService.getStats();
+              if (stats.activeContexts > 1) {
+                console.log(
+                  `[AutoMode] MCP Isolation: ${stats.activeContexts} active task contexts, ` +
+                    `server usage: ${JSON.stringify(stats.serverUsage)}`
+                );
+              }
+            } else {
+              console.log(
+                `[AutoMode] No matching MCP servers found for enabled IDs: [${options.enabledMcpServers.join(', ')}]`
+              );
+            }
+          }
+        } else {
+          console.log(`[AutoMode] SettingsService not available, skipping MCP config`);
+        }
+      } catch (error) {
+        console.error(`[AutoMode] Failed to load MCP config for feature ${featureId}:`, error);
+        // Continue without MCP - don't fail the entire execution
+      }
+    } else {
+      console.log(`[AutoMode] No MCP servers enabled for feature ${featureId}`);
+    }
+
+    // Execute via provider with environment injection
+    // Initial stream uses planning model for spec/full modes, implementation model otherwise
     const executeOptions: ExecuteOptions = {
       prompt: promptContent,
-      model: finalModel,
+      model: initialModel,
       maxTurns: maxTurns,
       cwd: workDir,
       allowedTools: allowedTools,
       abortController,
-      systemPrompt: options?.systemPrompt,
+      systemPrompt: sdkOptions.systemPrompt,
+      settingSources: sdkOptions.settingSources,
+      ...(providerConfigEnv ? { providerConfig: { env: providerConfigEnv } } : {}),
+      ...(mcpServersConfig ? { mcpServers: mcpServersConfig } : {}),
     };
+
+    console.log(
+      `[AutoMode] runAgent called for feature ${featureId} with planningModel: ${finalPlanningModel}, implementationModel: ${finalModel}, planningMode: ${planningMode}, requiresApproval: ${requiresApproval}`
+    );
+    console.log(
+      `[AutoMode] Using ${initialModel} for initial ${planningMode === 'spec' || planningMode === 'full' ? 'spec generation' : 'execution'}`
+    );
+
+    // Get provider for the initial model
+    const provider = ProviderFactory.getProviderForModel(initialModel);
+
+    console.log(`[AutoMode] Using provider "${provider.getName()}" for model "${initialModel}"`);
 
     // Execute via provider
     const stream = provider.executeQuery(executeOptions);
@@ -1864,165 +2145,167 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       }, WRITE_DEBOUNCE_MS);
     };
 
-    streamLoop: for await (const msg of stream) {
-      if (msg.type === 'assistant' && msg.message?.content) {
-        for (const block of msg.message.content) {
-          if (block.type === 'text') {
-            // Add separator before new text if we already have content and it doesn't end with newlines
-            if (responseText.length > 0 && !responseText.endsWith('\n\n')) {
-              if (responseText.endsWith('\n')) {
-                responseText += '\n';
-              } else {
-                responseText += '\n\n';
+    // Wrap main execution in try/finally to ensure MCP context cleanup on errors
+    try {
+      streamLoop: for await (const msg of stream) {
+        if (msg.type === 'assistant' && msg.message?.content) {
+          for (const block of msg.message.content) {
+            if (block.type === 'text') {
+              // Add separator before new text if we already have content and it doesn't end with newlines
+              if (responseText.length > 0 && !responseText.endsWith('\n\n')) {
+                if (responseText.endsWith('\n')) {
+                  responseText += '\n';
+                } else {
+                  responseText += '\n\n';
+                }
               }
-            }
-            responseText += block.text || '';
+              responseText += block.text || '';
 
-            // Check for authentication errors in the response
-            if (
-              block.text &&
-              (block.text.includes('Invalid API key') ||
-                block.text.includes('authentication_failed') ||
-                block.text.includes('Fix external API key'))
-            ) {
-              throw new Error(
-                'Authentication failed: Invalid or expired API key. ' +
-                  "Please check your ANTHROPIC_API_KEY, or run 'claude login' to re-authenticate."
-              );
-            }
-
-            // Schedule incremental file write (debounced)
-            scheduleWrite();
-
-            // Check for [SPEC_GENERATED] marker in planning modes (spec or full)
-            if (
-              planningModeRequiresApproval &&
-              !specDetected &&
-              responseText.includes('[SPEC_GENERATED]')
-            ) {
-              specDetected = true;
-
-              // Extract plan content (everything before the marker)
-              const markerIndex = responseText.indexOf('[SPEC_GENERATED]');
-              const planContent = responseText.substring(0, markerIndex).trim();
-
-              // Parse tasks from the generated spec (for spec and full modes)
-              // Use let since we may need to update this after plan revision
-              let parsedTasks = parseTasksFromSpec(planContent);
-              const tasksTotal = parsedTasks.length;
-
-              console.log(
-                `[AutoMode] Parsed ${tasksTotal} tasks from spec for feature ${featureId}`
-              );
-              if (parsedTasks.length > 0) {
-                console.log(`[AutoMode] Tasks: ${parsedTasks.map((t) => t.id).join(', ')}`);
+              // Check for authentication errors in the response
+              if (
+                block.text &&
+                (block.text.includes('Invalid API key') ||
+                  block.text.includes('authentication_failed') ||
+                  block.text.includes('Fix external API key'))
+              ) {
+                throw new Error(
+                  'Authentication failed: Invalid or expired API key. ' +
+                    "Please check your ANTHROPIC_API_KEY, or run 'claude login' to re-authenticate."
+                );
               }
 
-              // Update planSpec status to 'generated' and save content with parsed tasks
-              await this.updateFeaturePlanSpec(projectPath, featureId, {
-                status: 'generated',
-                content: planContent,
-                version: 1,
-                generatedAt: new Date().toISOString(),
-                reviewedByUser: false,
-                tasks: parsedTasks,
-                tasksTotal,
-                tasksCompleted: 0,
-              });
+              // Schedule incremental file write (debounced)
+              scheduleWrite();
 
-              let approvedPlanContent = planContent;
-              let userFeedback: string | undefined;
-              let currentPlanContent = planContent;
-              let planVersion = 1;
+              // Check for [SPEC_GENERATED] marker in planning modes (spec or full)
+              if (
+                planningModeRequiresApproval &&
+                !specDetected &&
+                responseText.includes('[SPEC_GENERATED]')
+              ) {
+                specDetected = true;
 
-              // Only pause for approval if requirePlanApproval is true
-              if (requiresApproval) {
-                // ========================================
-                // PLAN REVISION LOOP
-                // Keep regenerating plan until user approves
-                // ========================================
-                let planApproved = false;
+                // Extract plan content (everything before the marker)
+                const markerIndex = responseText.indexOf('[SPEC_GENERATED]');
+                const planContent = responseText.substring(0, markerIndex).trim();
 
-                while (!planApproved) {
-                  console.log(
-                    `[AutoMode] Spec v${planVersion} generated for feature ${featureId}, waiting for approval`
-                  );
+                // Parse tasks from the generated spec (for spec and full modes)
+                // Use let since we may need to update this after plan revision
+                let parsedTasks = parseTasksFromSpec(planContent);
+                const tasksTotal = parsedTasks.length;
 
-                  // CRITICAL: Register pending approval BEFORE emitting event
-                  const approvalPromise = this.waitForPlanApproval(featureId, projectPath);
+                console.log(
+                  `[AutoMode] Parsed ${tasksTotal} tasks from spec for feature ${featureId}`
+                );
+                if (parsedTasks.length > 0) {
+                  console.log(`[AutoMode] Tasks: ${parsedTasks.map((t) => t.id).join(', ')}`);
+                }
 
-                  // Emit plan_approval_required event
-                  this.emitAutoModeEvent('plan_approval_required', {
-                    featureId,
-                    projectPath,
-                    planContent: currentPlanContent,
-                    planningMode,
-                    planVersion,
-                  });
+                // Update planSpec status to 'generated' and save content with parsed tasks
+                await this.updateFeaturePlanSpec(projectPath, featureId, {
+                  status: 'generated',
+                  content: planContent,
+                  version: 1,
+                  generatedAt: new Date().toISOString(),
+                  reviewedByUser: false,
+                  tasks: parsedTasks,
+                  tasksTotal,
+                  tasksCompleted: 0,
+                });
 
-                  // Wait for user response
-                  try {
-                    const approvalResult = await approvalPromise;
+                let approvedPlanContent = planContent;
+                let userFeedback: string | undefined;
+                let currentPlanContent = planContent;
+                let planVersion = 1;
 
-                    if (approvalResult.approved) {
-                      // User approved the plan
-                      console.log(
-                        `[AutoMode] Plan v${planVersion} approved for feature ${featureId}`
-                      );
-                      planApproved = true;
+                // Only pause for approval if requirePlanApproval is true
+                if (requiresApproval) {
+                  // ========================================
+                  // PLAN REVISION LOOP
+                  // Keep regenerating plan until user approves
+                  // ========================================
+                  let planApproved = false;
 
-                      // If user provided edits, use the edited version
-                      if (approvalResult.editedPlan) {
-                        approvedPlanContent = approvalResult.editedPlan;
-                        await this.updateFeaturePlanSpec(projectPath, featureId, {
-                          content: approvalResult.editedPlan,
+                  while (!planApproved) {
+                    console.log(
+                      `[AutoMode] Spec v${planVersion} generated for feature ${featureId}, waiting for approval`
+                    );
+
+                    // CRITICAL: Register pending approval BEFORE emitting event
+                    const approvalPromise = this.waitForPlanApproval(featureId, projectPath);
+
+                    // Emit plan_approval_required event
+                    this.emitAutoModeEvent('plan_approval_required', {
+                      featureId,
+                      projectPath,
+                      planContent: currentPlanContent,
+                      planningMode,
+                      planVersion,
+                    });
+
+                    // Wait for user response
+                    try {
+                      const approvalResult = await approvalPromise;
+
+                      if (approvalResult.approved) {
+                        // User approved the plan
+                        console.log(
+                          `[AutoMode] Plan v${planVersion} approved for feature ${featureId}`
+                        );
+                        planApproved = true;
+
+                        // If user provided edits, use the edited version
+                        if (approvalResult.editedPlan) {
+                          approvedPlanContent = approvalResult.editedPlan;
+                          await this.updateFeaturePlanSpec(projectPath, featureId, {
+                            content: approvalResult.editedPlan,
+                          });
+                        } else {
+                          approvedPlanContent = currentPlanContent;
+                        }
+
+                        // Capture any additional feedback for implementation
+                        userFeedback = approvalResult.feedback;
+
+                        // Emit approval event
+                        this.emitAutoModeEvent('plan_approved', {
+                          featureId,
+                          projectPath,
+                          hasEdits: !!approvalResult.editedPlan,
+                          planVersion,
                         });
                       } else {
-                        approvedPlanContent = currentPlanContent;
-                      }
+                        // User rejected - check if they provided feedback for revision
+                        const hasFeedback =
+                          approvalResult.feedback && approvalResult.feedback.trim().length > 0;
+                        const hasEdits =
+                          approvalResult.editedPlan && approvalResult.editedPlan.trim().length > 0;
 
-                      // Capture any additional feedback for implementation
-                      userFeedback = approvalResult.feedback;
+                        if (!hasFeedback && !hasEdits) {
+                          // No feedback or edits = explicit cancel
+                          console.log(
+                            `[AutoMode] Plan rejected without feedback for feature ${featureId}, cancelling`
+                          );
+                          throw new Error('Plan cancelled by user');
+                        }
 
-                      // Emit approval event
-                      this.emitAutoModeEvent('plan_approved', {
-                        featureId,
-                        projectPath,
-                        hasEdits: !!approvalResult.editedPlan,
-                        planVersion,
-                      });
-                    } else {
-                      // User rejected - check if they provided feedback for revision
-                      const hasFeedback =
-                        approvalResult.feedback && approvalResult.feedback.trim().length > 0;
-                      const hasEdits =
-                        approvalResult.editedPlan && approvalResult.editedPlan.trim().length > 0;
-
-                      if (!hasFeedback && !hasEdits) {
-                        // No feedback or edits = explicit cancel
+                        // User wants revisions - regenerate the plan
                         console.log(
-                          `[AutoMode] Plan rejected without feedback for feature ${featureId}, cancelling`
+                          `[AutoMode] Plan v${planVersion} rejected with feedback for feature ${featureId}, regenerating...`
                         );
-                        throw new Error('Plan cancelled by user');
-                      }
+                        planVersion++;
 
-                      // User wants revisions - regenerate the plan
-                      console.log(
-                        `[AutoMode] Plan v${planVersion} rejected with feedback for feature ${featureId}, regenerating...`
-                      );
-                      planVersion++;
+                        // Emit revision event
+                        this.emitAutoModeEvent('plan_revision_requested', {
+                          featureId,
+                          projectPath,
+                          feedback: approvalResult.feedback,
+                          hasEdits: !!hasEdits,
+                          planVersion,
+                        });
 
-                      // Emit revision event
-                      this.emitAutoModeEvent('plan_revision_requested', {
-                        featureId,
-                        projectPath,
-                        feedback: approvalResult.feedback,
-                        hasEdits: !!hasEdits,
-                        planVersion,
-                      });
-
-                      // Build revision prompt
-                      let revisionPrompt = `The user has requested revisions to the plan/specification.
+                        // Build revision prompt
+                        let revisionPrompt = `The user has requested revisions to the plan/specification.
 
 ## Previous Plan (v${planVersion - 1})
 ${hasEdits ? approvalResult.editedPlan : currentPlanContent}
@@ -2037,167 +2320,273 @@ After generating the revised spec, output:
 "[SPEC_GENERATED] Please review the revised specification above."
 `;
 
-                      // Update status to regenerating
-                      await this.updateFeaturePlanSpec(projectPath, featureId, {
-                        status: 'generating',
-                        version: planVersion,
-                      });
+                        // Update status to regenerating
+                        await this.updateFeaturePlanSpec(projectPath, featureId, {
+                          status: 'generating',
+                          version: planVersion,
+                        });
 
-                      // Make revision call
-                      const revisionStream = provider.executeQuery({
-                        prompt: revisionPrompt,
-                        model: finalModel,
-                        maxTurns: maxTurns || 100,
-                        cwd: workDir,
-                        allowedTools: allowedTools,
-                        abortController,
-                      });
+                        // Make revision call (still planning phase - use planning model)
+                        const revisionStream = provider.executeQuery({
+                          prompt: revisionPrompt,
+                          model: finalPlanningModel,
+                          maxTurns: maxTurns || 100,
+                          cwd: workDir,
+                          allowedTools: allowedTools,
+                          abortController,
+                          ...(providerConfigEnv
+                            ? { providerConfig: { env: providerConfigEnv } }
+                            : {}),
+                          ...(mcpServersConfig ? { mcpServers: mcpServersConfig } : {}),
+                        });
 
-                      let revisionText = '';
-                      for await (const msg of revisionStream) {
-                        if (msg.type === 'assistant' && msg.message?.content) {
-                          for (const block of msg.message.content) {
-                            if (block.type === 'text') {
-                              revisionText += block.text || '';
-                              this.emitAutoModeEvent('auto_mode_progress', {
-                                featureId,
-                                content: block.text,
-                              });
+                        let revisionText = '';
+                        for await (const msg of revisionStream) {
+                          if (msg.type === 'assistant' && msg.message?.content) {
+                            for (const block of msg.message.content) {
+                              if (block.type === 'text') {
+                                revisionText += block.text || '';
+                                this.emitAutoModeEvent('auto_mode_progress', {
+                                  featureId,
+                                  content: block.text,
+                                });
+                              }
                             }
+                          } else if (msg.type === 'error') {
+                            throw new Error(msg.error || 'Error during plan revision');
+                          } else if (msg.type === 'result' && msg.subtype === 'success') {
+                            revisionText += msg.result || '';
                           }
-                        } else if (msg.type === 'error') {
-                          throw new Error(msg.error || 'Error during plan revision');
-                        } else if (msg.type === 'result' && msg.subtype === 'success') {
-                          revisionText += msg.result || '';
                         }
+
+                        // Extract new plan content
+                        const markerIndex = revisionText.indexOf('[SPEC_GENERATED]');
+                        if (markerIndex > 0) {
+                          currentPlanContent = revisionText.substring(0, markerIndex).trim();
+                        } else {
+                          currentPlanContent = revisionText.trim();
+                        }
+
+                        // Re-parse tasks from revised plan
+                        const revisedTasks = parseTasksFromSpec(currentPlanContent);
+                        console.log(`[AutoMode] Revised plan has ${revisedTasks.length} tasks`);
+
+                        // Update planSpec with revised content
+                        await this.updateFeaturePlanSpec(projectPath, featureId, {
+                          status: 'generated',
+                          content: currentPlanContent,
+                          version: planVersion,
+                          tasks: revisedTasks,
+                          tasksTotal: revisedTasks.length,
+                          tasksCompleted: 0,
+                        });
+
+                        // Update parsedTasks for implementation
+                        parsedTasks = revisedTasks;
+
+                        responseText += revisionText;
                       }
-
-                      // Extract new plan content
-                      const markerIndex = revisionText.indexOf('[SPEC_GENERATED]');
-                      if (markerIndex > 0) {
-                        currentPlanContent = revisionText.substring(0, markerIndex).trim();
-                      } else {
-                        currentPlanContent = revisionText.trim();
+                    } catch (error) {
+                      if ((error as Error).message.includes('cancelled')) {
+                        throw error;
                       }
-
-                      // Re-parse tasks from revised plan
-                      const revisedTasks = parseTasksFromSpec(currentPlanContent);
-                      console.log(`[AutoMode] Revised plan has ${revisedTasks.length} tasks`);
-
-                      // Update planSpec with revised content
-                      await this.updateFeaturePlanSpec(projectPath, featureId, {
-                        status: 'generated',
-                        content: currentPlanContent,
-                        version: planVersion,
-                        tasks: revisedTasks,
-                        tasksTotal: revisedTasks.length,
-                        tasksCompleted: 0,
-                      });
-
-                      // Update parsedTasks for implementation
-                      parsedTasks = revisedTasks;
-
-                      responseText += revisionText;
+                      throw new Error(`Plan approval failed: ${(error as Error).message}`);
                     }
-                  } catch (error) {
-                    if ((error as Error).message.includes('cancelled')) {
-                      throw error;
-                    }
-                    throw new Error(`Plan approval failed: ${(error as Error).message}`);
                   }
-                }
-              } else {
-                // Auto-approve: requirePlanApproval is false, just continue without pausing
-                console.log(
-                  `[AutoMode] Spec generated for feature ${featureId}, auto-approving (requirePlanApproval=false)`
-                );
-
-                // Emit info event for frontend
-                this.emitAutoModeEvent('plan_auto_approved', {
-                  featureId,
-                  projectPath,
-                  planContent,
-                  planningMode,
-                });
-
-                approvedPlanContent = planContent;
-              }
-
-              // CRITICAL: After approval, we need to make a second call to continue implementation
-              // The agent is waiting for "approved" - we need to send it and continue
-              console.log(
-                `[AutoMode] Making continuation call after plan approval for feature ${featureId}`
-              );
-
-              // Update planSpec status to approved (handles both manual and auto-approval paths)
-              await this.updateFeaturePlanSpec(projectPath, featureId, {
-                status: 'approved',
-                approvedAt: new Date().toISOString(),
-                reviewedByUser: requiresApproval,
-              });
-
-              // ========================================
-              // MULTI-AGENT TASK EXECUTION
-              // Each task gets its own focused agent call
-              // ========================================
-
-              if (parsedTasks.length > 0) {
-                console.log(
-                  `[AutoMode] Starting multi-agent execution: ${parsedTasks.length} tasks for feature ${featureId}`
-                );
-
-                // Execute each task with a separate agent
-                for (let taskIndex = 0; taskIndex < parsedTasks.length; taskIndex++) {
-                  const task = parsedTasks[taskIndex];
-
-                  // Check for abort
-                  if (abortController.signal.aborted) {
-                    throw new Error('Feature execution aborted');
-                  }
-
-                  // Emit task started
-                  console.log(`[AutoMode] Starting task ${task.id}: ${task.description}`);
-                  this.emitAutoModeEvent('auto_mode_task_started', {
-                    featureId,
-                    projectPath,
-                    taskId: task.id,
-                    taskDescription: task.description,
-                    taskIndex,
-                    tasksTotal: parsedTasks.length,
-                  });
-
-                  // Update planSpec with current task
-                  await this.updateFeaturePlanSpec(projectPath, featureId, {
-                    currentTaskId: task.id,
-                  });
-
-                  // Build focused prompt for this specific task
-                  const taskPrompt = this.buildTaskPrompt(
-                    task,
-                    parsedTasks,
-                    taskIndex,
-                    approvedPlanContent,
-                    userFeedback
+                } else {
+                  // Auto-approve: requirePlanApproval is false, just continue without pausing
+                  console.log(
+                    `[AutoMode] Spec generated for feature ${featureId}, auto-approving (requirePlanApproval=false)`
                   );
 
-                  // Execute task with dedicated agent
-                  const taskStream = provider.executeQuery({
-                    prompt: taskPrompt,
+                  // Emit info event for frontend
+                  this.emitAutoModeEvent('plan_auto_approved', {
+                    featureId,
+                    projectPath,
+                    planContent,
+                    planningMode,
+                  });
+
+                  approvedPlanContent = planContent;
+                }
+
+                // CRITICAL: After approval, we need to make a second call to continue implementation
+                // The agent is waiting for "approved" - we need to send it and continue
+                console.log(
+                  `[AutoMode] Making continuation call after plan approval for feature ${featureId}`
+                );
+
+                // Update planSpec status to approved (handles both manual and auto-approval paths)
+                await this.updateFeaturePlanSpec(projectPath, featureId, {
+                  status: 'approved',
+                  approvedAt: new Date().toISOString(),
+                  reviewedByUser: requiresApproval,
+                });
+
+                // ========================================
+                // MULTI-AGENT TASK EXECUTION
+                // Each task gets its own focused agent call
+                // ========================================
+
+                if (parsedTasks.length > 0) {
+                  console.log(
+                    `[AutoMode] Starting multi-agent execution: ${parsedTasks.length} tasks for feature ${featureId}`
+                  );
+
+                  // Get implementation provider (may differ from planning provider)
+                  const implementationProvider = ProviderFactory.getProviderForModel(finalModel);
+                  console.log(
+                    `[AutoMode] Using implementation model ${finalModel} with provider "${implementationProvider.getName()}"`
+                  );
+
+                  // Execute each task with a separate agent
+                  for (let taskIndex = 0; taskIndex < parsedTasks.length; taskIndex++) {
+                    const task = parsedTasks[taskIndex];
+
+                    // Check for abort
+                    if (abortController.signal.aborted) {
+                      throw new Error('Feature execution aborted');
+                    }
+
+                    // Emit task started
+                    console.log(`[AutoMode] Starting task ${task.id}: ${task.description}`);
+                    this.emitAutoModeEvent('auto_mode_task_started', {
+                      featureId,
+                      projectPath,
+                      taskId: task.id,
+                      taskDescription: task.description,
+                      taskIndex,
+                      tasksTotal: parsedTasks.length,
+                    });
+
+                    // Update planSpec with current task
+                    await this.updateFeaturePlanSpec(projectPath, featureId, {
+                      currentTaskId: task.id,
+                    });
+
+                    // Build focused prompt for this specific task
+                    const taskPrompt = this.buildTaskPrompt(
+                      task,
+                      parsedTasks,
+                      taskIndex,
+                      approvedPlanContent,
+                      userFeedback
+                    );
+
+                    // Execute task with dedicated agent (implementation phase - use implementation model/env)
+                    const taskStream = implementationProvider.executeQuery({
+                      prompt: taskPrompt,
+                      model: finalModel,
+                      maxTurns: Math.min(maxTurns || 100, 50), // Limit turns per task
+                      cwd: workDir,
+                      allowedTools: allowedTools,
+                      abortController,
+                      ...(implementationEnv ? { providerConfig: { env: implementationEnv } } : {}),
+                      ...(mcpServersConfig ? { mcpServers: mcpServersConfig } : {}),
+                    });
+
+                    let taskOutput = '';
+
+                    // Process task stream
+                    for await (const msg of taskStream) {
+                      if (msg.type === 'assistant' && msg.message?.content) {
+                        for (const block of msg.message.content) {
+                          if (block.type === 'text') {
+                            taskOutput += block.text || '';
+                            responseText += block.text || '';
+                            this.emitAutoModeEvent('auto_mode_progress', {
+                              featureId,
+                              content: block.text,
+                            });
+                          } else if (block.type === 'tool_use') {
+                            this.emitAutoModeEvent('auto_mode_tool', {
+                              featureId,
+                              tool: block.name,
+                              input: block.input,
+                            });
+                          }
+                        }
+                      } else if (msg.type === 'error') {
+                        throw new Error(msg.error || `Error during task ${task.id}`);
+                      } else if (msg.type === 'result' && msg.subtype === 'success') {
+                        taskOutput += msg.result || '';
+                        responseText += msg.result || '';
+                      }
+                    }
+
+                    // Emit task completed
+                    console.log(`[AutoMode] Task ${task.id} completed for feature ${featureId}`);
+                    this.emitAutoModeEvent('auto_mode_task_complete', {
+                      featureId,
+                      projectPath,
+                      taskId: task.id,
+                      tasksCompleted: taskIndex + 1,
+                      tasksTotal: parsedTasks.length,
+                    });
+
+                    // Update planSpec with progress
+                    await this.updateFeaturePlanSpec(projectPath, featureId, {
+                      tasksCompleted: taskIndex + 1,
+                    });
+
+                    // Check for phase completion (group tasks by phase)
+                    if (task.phase) {
+                      const nextTask = parsedTasks[taskIndex + 1];
+                      if (!nextTask || nextTask.phase !== task.phase) {
+                        // Phase changed, emit phase complete
+                        const phaseMatch = task.phase.match(/Phase\s*(\d+)/i);
+                        if (phaseMatch) {
+                          this.emitAutoModeEvent('auto_mode_phase_complete', {
+                            featureId,
+                            projectPath,
+                            phaseNumber: parseInt(phaseMatch[1], 10),
+                          });
+                        }
+                      }
+                    }
+                  }
+
+                  console.log(
+                    `[AutoMode] All ${parsedTasks.length} tasks completed for feature ${featureId}`
+                  );
+                } else {
+                  // No parsed tasks - fall back to single-agent execution
+                  console.log(
+                    `[AutoMode] No parsed tasks, using single-agent execution for feature ${featureId}`
+                  );
+
+                  // Get implementation provider (may differ from planning provider)
+                  const implementationProvider = ProviderFactory.getProviderForModel(finalModel);
+                  console.log(
+                    `[AutoMode] Using implementation model ${finalModel} with provider "${implementationProvider.getName()}"`
+                  );
+
+                  const continuationPrompt = `The plan/specification has been approved. Now implement it.
+${userFeedback ? `\n## User Feedback\n${userFeedback}\n` : ''}
+## Approved Plan
+
+${approvedPlanContent}
+
+## Instructions
+
+Implement all the changes described in the plan above.`;
+
+                  // Use implementation model/env for the continuation (implementation phase)
+                  const continuationStream = implementationProvider.executeQuery({
+                    prompt: continuationPrompt,
                     model: finalModel,
-                    maxTurns: Math.min(maxTurns || 100, 50), // Limit turns per task
+                    maxTurns: maxTurns,
                     cwd: workDir,
                     allowedTools: allowedTools,
                     abortController,
+                    ...(implementationEnv ? { providerConfig: { env: implementationEnv } } : {}),
+                    ...(mcpServersConfig ? { mcpServers: mcpServersConfig } : {}),
                   });
 
-                  let taskOutput = '';
-
-                  // Process task stream
-                  for await (const msg of taskStream) {
+                  for await (const msg of continuationStream) {
                     if (msg.type === 'assistant' && msg.message?.content) {
                       for (const block of msg.message.content) {
                         if (block.type === 'text') {
-                          taskOutput += block.text || '';
                           responseText += block.text || '';
                           this.emitAutoModeEvent('auto_mode_progress', {
                             featureId,
@@ -2212,146 +2601,71 @@ After generating the revised spec, output:
                         }
                       }
                     } else if (msg.type === 'error') {
-                      throw new Error(msg.error || `Error during task ${task.id}`);
+                      throw new Error(msg.error || 'Unknown error during implementation');
                     } else if (msg.type === 'result' && msg.subtype === 'success') {
-                      taskOutput += msg.result || '';
                       responseText += msg.result || '';
                     }
                   }
-
-                  // Emit task completed
-                  console.log(`[AutoMode] Task ${task.id} completed for feature ${featureId}`);
-                  this.emitAutoModeEvent('auto_mode_task_complete', {
-                    featureId,
-                    projectPath,
-                    taskId: task.id,
-                    tasksCompleted: taskIndex + 1,
-                    tasksTotal: parsedTasks.length,
-                  });
-
-                  // Update planSpec with progress
-                  await this.updateFeaturePlanSpec(projectPath, featureId, {
-                    tasksCompleted: taskIndex + 1,
-                  });
-
-                  // Check for phase completion (group tasks by phase)
-                  if (task.phase) {
-                    const nextTask = parsedTasks[taskIndex + 1];
-                    if (!nextTask || nextTask.phase !== task.phase) {
-                      // Phase changed, emit phase complete
-                      const phaseMatch = task.phase.match(/Phase\s*(\d+)/i);
-                      if (phaseMatch) {
-                        this.emitAutoModeEvent('auto_mode_phase_complete', {
-                          featureId,
-                          projectPath,
-                          phaseNumber: parseInt(phaseMatch[1], 10),
-                        });
-                      }
-                    }
-                  }
                 }
 
-                console.log(
-                  `[AutoMode] All ${parsedTasks.length} tasks completed for feature ${featureId}`
-                );
-              } else {
-                // No parsed tasks - fall back to single-agent execution
-                console.log(
-                  `[AutoMode] No parsed tasks, using single-agent execution for feature ${featureId}`
-                );
-
-                const continuationPrompt = `The plan/specification has been approved. Now implement it.
-${userFeedback ? `\n## User Feedback\n${userFeedback}\n` : ''}
-## Approved Plan
-
-${approvedPlanContent}
-
-## Instructions
-
-Implement all the changes described in the plan above.`;
-
-                const continuationStream = provider.executeQuery({
-                  prompt: continuationPrompt,
-                  model: finalModel,
-                  maxTurns: maxTurns,
-                  cwd: workDir,
-                  allowedTools: allowedTools,
-                  abortController,
-                });
-
-                for await (const msg of continuationStream) {
-                  if (msg.type === 'assistant' && msg.message?.content) {
-                    for (const block of msg.message.content) {
-                      if (block.type === 'text') {
-                        responseText += block.text || '';
-                        this.emitAutoModeEvent('auto_mode_progress', {
-                          featureId,
-                          content: block.text,
-                        });
-                      } else if (block.type === 'tool_use') {
-                        this.emitAutoModeEvent('auto_mode_tool', {
-                          featureId,
-                          tool: block.name,
-                          input: block.input,
-                        });
-                      }
-                    }
-                  } else if (msg.type === 'error') {
-                    throw new Error(msg.error || 'Unknown error during implementation');
-                  } else if (msg.type === 'result' && msg.subtype === 'success') {
-                    responseText += msg.result || '';
-                  }
-                }
+                console.log(`[AutoMode] Implementation completed for feature ${featureId}`);
+                // Exit the original stream loop since continuation is done
+                break streamLoop;
               }
 
-              console.log(`[AutoMode] Implementation completed for feature ${featureId}`);
-              // Exit the original stream loop since continuation is done
-              break streamLoop;
-            }
-
-            // Only emit progress for non-marker text (marker was already handled above)
-            if (!specDetected) {
-              this.emitAutoModeEvent('auto_mode_progress', {
+              // Only emit progress for non-marker text (marker was already handled above)
+              if (!specDetected) {
+                this.emitAutoModeEvent('auto_mode_progress', {
+                  featureId,
+                  content: block.text,
+                });
+              }
+            } else if (block.type === 'tool_use') {
+              // Emit event for real-time UI
+              this.emitAutoModeEvent('auto_mode_tool', {
                 featureId,
-                content: block.text,
+                tool: block.name,
+                input: block.input,
               });
-            }
-          } else if (block.type === 'tool_use') {
-            // Emit event for real-time UI
-            this.emitAutoModeEvent('auto_mode_tool', {
-              featureId,
-              tool: block.name,
-              input: block.input,
-            });
 
-            // Also add to file output for persistence
-            if (responseText.length > 0 && !responseText.endsWith('\n')) {
-              responseText += '\n';
+              // Also add to file output for persistence
+              if (responseText.length > 0 && !responseText.endsWith('\n')) {
+                responseText += '\n';
+              }
+              responseText += `\n🔧 Tool: ${block.name}\n`;
+              if (block.input) {
+                responseText += `Input: ${JSON.stringify(block.input, null, 2)}\n`;
+              }
+              scheduleWrite();
             }
-            responseText += `\n🔧 Tool: ${block.name}\n`;
-            if (block.input) {
-              responseText += `Input: ${JSON.stringify(block.input, null, 2)}\n`;
-            }
-            scheduleWrite();
           }
+        } else if (msg.type === 'error') {
+          // Handle error messages
+          throw new Error(msg.error || 'Unknown error');
+        } else if (msg.type === 'result' && msg.subtype === 'success') {
+          // Don't replace responseText - the accumulated content is the full history
+          // The msg.result is just a summary which would lose all tool use details
+          // Just ensure final write happens
+          scheduleWrite();
         }
-      } else if (msg.type === 'error') {
-        // Handle error messages
-        throw new Error(msg.error || 'Unknown error');
-      } else if (msg.type === 'result' && msg.subtype === 'success') {
-        // Don't replace responseText - the accumulated content is the full history
-        // The msg.result is just a summary which would lose all tool use details
-        // Just ensure final write happens
-        scheduleWrite();
+      }
+    } finally {
+      // Clear any pending timeout and do a final write to ensure all content is saved
+      if (writeTimeout) {
+        clearTimeout(writeTimeout);
+      }
+      // Final write - ensure all accumulated content is saved
+      await writeToFile();
+
+      // Clean up the isolated MCP context for this task
+      // This ensures no leakage to subsequent task runs
+      if (taskMcpContext) {
+        const released = taskIsolationService.releaseTaskContext(taskExecutionId);
+        if (released) {
+          console.log(`[AutoMode] Released MCP context for task ${taskExecutionId}`);
+        }
       }
     }
-
-    // Clear any pending timeout and do a final write to ensure all content is saved
-    if (writeTimeout) {
-      clearTimeout(writeTimeout);
-    }
-    // Final write - ensure all accumulated content is saved
-    await writeToFile();
   }
 
   private async executeFeatureWithContext(

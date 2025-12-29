@@ -7,10 +7,12 @@ interface AuthenticationStatusDisplayProps {
   apiKeyStatus: {
     hasAnthropicKey: boolean;
     hasGoogleKey: boolean;
+    hasZaiKey: boolean;
   } | null;
   apiKeys: {
     anthropic: string;
     google: string;
+    zai: string;
   };
 }
 

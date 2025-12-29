@@ -685,3 +685,214 @@ ipcMain.handle('window:updateMinWidth', (_, sidebarExpanded: boolean) => {
     mainWindow.setSize(minWidth, currentBounds.height);
   }
 });
+
+// Dev server preview window - opens a dev server URL in a separate Electron window
+ipcMain.handle(
+  'window:openDevServerPreview',
+  async (_, url: string, title?: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const iconPath = getIconPath();
+
+      const previewWindow = new BrowserWindow({
+        width: 1280,
+        height: 900,
+        minWidth: 800,
+        minHeight: 600,
+        title: title || `Dev Server Preview - ${url}`,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          // No preload needed for external content
+        },
+        backgroundColor: '#1a1a1a',
+        ...(iconPath && { icon: iconPath }),
+      });
+
+      // Retry configuration for dev server startup delay
+      const maxRetries = 30; // 30 retries * 1 second = 30 seconds max wait
+      const retryDelay = 1000; // 1 second between retries
+      let serverLoaded = false;
+
+      // Show a loading message while waiting for the server
+      const loadingHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body {
+                background: #1a1a1a;
+                color: #fff;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+              }
+              .spinner {
+                width: 40px;
+                height: 40px;
+                border: 3px solid #333;
+                border-top-color: #3b82f6;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-bottom: 20px;
+              }
+              @keyframes spin {
+                to { transform: rotate(360deg); }
+              }
+              .message {
+                color: #888;
+                font-size: 14px;
+              }
+              .url {
+                color: #3b82f6;
+                font-size: 12px;
+                margin-top: 8px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="spinner"></div>
+            <div class="message">Waiting for dev server to start...</div>
+            <div class="url">${url}</div>
+          </body>
+        </html>
+      `;
+
+      // Load the loading screen first
+      await previewWindow.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(loadingHtml)}`
+      );
+
+      // Try to load the dev server URL with retries
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // Check if window was closed
+          if (previewWindow.isDestroyed()) {
+            return { success: false, error: 'Window was closed' };
+          }
+
+          // Try to check if server is ready using http module
+          const serverReady = await new Promise<boolean>((resolve) => {
+            const urlObj = new URL(url);
+            const req = http.get(
+              {
+                hostname: urlObj.hostname,
+                port: urlObj.port || 80,
+                path: urlObj.pathname || '/',
+                timeout: 2000,
+              },
+              (res) => {
+                // Any response means server is up
+                res.resume(); // Consume response data
+                resolve(true);
+              }
+            );
+            req.on('error', () => resolve(false));
+            req.on('timeout', () => {
+              req.destroy();
+              resolve(false);
+            });
+          });
+
+          if (serverReady) {
+            // Server is responding, load the URL
+            await previewWindow.loadURL(url);
+            serverLoaded = true;
+            console.log(`[Electron] Dev server preview loaded after ${attempt} attempt(s)`);
+            break;
+          } else {
+            if (attempt < maxRetries) {
+              console.log(
+                `[Electron] Dev server not ready (attempt ${attempt}/${maxRetries}), retrying...`
+              );
+              await new Promise((resolve) => setTimeout(resolve, retryDelay));
+            }
+          }
+        } catch (loadError) {
+          console.error(`[Electron] Error loading dev server:`, loadError);
+
+          if (attempt < maxRetries) {
+            console.log(
+              `[Electron] Failed to load dev server (attempt ${attempt}/${maxRetries}), retrying...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          }
+        }
+      }
+
+      // Check if we successfully loaded or exhausted retries
+      if (previewWindow.isDestroyed()) {
+        return { success: false, error: 'Window was closed' };
+      }
+
+      // If server never loaded, show an error screen
+      if (!serverLoaded) {
+        const errorHtml = `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <style>
+                body {
+                  background: #1a1a1a;
+                  color: #fff;
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  display: flex;
+                  flex-direction: column;
+                  justify-content: center;
+                  align-items: center;
+                  height: 100vh;
+                  margin: 0;
+                  text-align: center;
+                  padding: 20px;
+                }
+                .icon { font-size: 48px; margin-bottom: 20px; }
+                .title { color: #ef4444; font-size: 18px; margin-bottom: 10px; }
+                .message { color: #888; font-size: 14px; max-width: 400px; line-height: 1.5; }
+                .url { color: #3b82f6; font-size: 12px; margin-top: 16px; }
+                .retry-btn {
+                  margin-top: 20px;
+                  padding: 8px 16px;
+                  background: #3b82f6;
+                  color: white;
+                  border: none;
+                  border-radius: 4px;
+                  cursor: pointer;
+                  font-size: 14px;
+                }
+                .retry-btn:hover { background: #2563eb; }
+              </style>
+            </head>
+            <body>
+              <div class="icon">⚠️</div>
+              <div class="title">Could not connect to dev server</div>
+              <div class="message">
+                The dev server did not respond after 30 seconds.
+                Make sure the server started successfully and is running on the expected port.
+              </div>
+              <div class="url">${url}</div>
+              <button class="retry-btn" onclick="location.href='${url}'">Try Again</button>
+            </body>
+          </html>
+        `;
+        await previewWindow.loadURL(
+          `data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`
+        );
+        console.error(`[Electron] Dev server never became ready at ${url}`);
+      }
+
+      // Handle external link clicks - open in default browser
+      previewWindow.webContents.setWindowOpenHandler(({ url: linkUrl }) => {
+        shell.openExternal(linkUrl);
+        return { action: 'deny' };
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('[Electron] Failed to open dev server preview:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+);

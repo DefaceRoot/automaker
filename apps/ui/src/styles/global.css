@@ -389,78 +389,23 @@
   }
 }
 
-/* Custom scrollbar for dark themes */
-:is(
-    .dark,
-    .retro,
-    .dracula,
-    .nord,
-    .monokai,
-    .tokyonight,
-    .solarized,
-    .gruvbox,
-    .catppuccin,
-    .onedark,
-    .synthwave,
-    .red,
-    .sunset,
-    .gray
-  )
-  ::-webkit-scrollbar {
+/* Universal scrollbar styling using theme CSS variables */
+::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-:is(
-    .dark,
-    .retro,
-    .dracula,
-    .nord,
-    .monokai,
-    .tokyonight,
-    .solarized,
-    .gruvbox,
-    .catppuccin,
-    .onedark,
-    .synthwave,
-    .red,
-    .sunset,
-    .gray
-  )
-  ::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: var(--muted);
 }
 
-:is(.dark, .retro) ::-webkit-scrollbar-thumb {
-  background: oklch(0.3 0 0);
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
   border-radius: 4px;
 }
 
-:is(.dark, .retro) ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.4 0 0);
-}
-
-/* Retro Scrollbar override */
-.retro ::-webkit-scrollbar-thumb {
-  background: var(--primary);
-  border-radius: 0;
-}
-.retro ::-webkit-scrollbar-track {
-  background: var(--background);
-}
-
-/* Red theme scrollbar */
-.red ::-webkit-scrollbar-thumb {
-  background: oklch(0.35 0.15 25);
-  border-radius: 4px;
-}
-
-.red ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.45 0.18 25);
-}
-
-.red ::-webkit-scrollbar-track {
-  background: oklch(0.15 0.05 25);
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground);
 }
 
 /* Always visible scrollbar for file diffs and code blocks */
@@ -888,4 +833,240 @@
 
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
+}
+
+/* ========================================
+   DEPENDENCY GRAPH STYLES
+   Theme-aware styling for React Flow graph
+   ======================================== */
+
+/* React Flow base theme overrides */
+.graph-canvas {
+  --xy-background-color: transparent;
+  --xy-node-background-color: var(--card);
+  --xy-node-border-color: var(--border);
+  --xy-node-border-radius: 0.75rem;
+  --xy-edge-stroke-default: var(--border);
+  --xy-edge-stroke-selected: var(--brand-500);
+  --xy-minimap-background-color: var(--popover);
+  --xy-minimap-mask-background-color: rgba(0, 0, 0, 0.2);
+  --xy-controls-background-color: var(--popover);
+  --xy-controls-border-color: var(--border);
+}
+
+/* MiniMap styling */
+.graph-canvas .react-flow__minimap {
+  background-color: var(--popover) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 0.5rem;
+}
+
+.graph-canvas .react-flow__minimap-mask {
+  fill: var(--background);
+  fill-opacity: 0.8;
+}
+
+/* Edge animations */
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@keyframes edge-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px var(--status-in-progress));
+  }
+  50% {
+    filter: drop-shadow(0 0 6px var(--status-in-progress));
+  }
+}
+
+.graph-canvas .animated-edge path {
+  animation: flow-dash 0.5s linear infinite;
+}
+
+.graph-canvas .edge-flowing path {
+  animation:
+    flow-dash 0.5s linear infinite,
+    edge-glow 2s ease-in-out infinite;
+}
+
+/* Edge particle animation */
+.edge-particle {
+  pointer-events: none;
+}
+
+/* Node animations */
+@keyframes pulse-subtle {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--status-in-progress);
+  }
+  50% {
+    box-shadow: 0 0 15px 3px var(--status-in-progress);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* Progress bar indeterminate animation */
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+    width: 50%;
+  }
+  50% {
+    transform: translateX(50%);
+    width: 30%;
+  }
+  100% {
+    transform: translateX(200%);
+    width: 50%;
+  }
+}
+
+.animate-progress-indeterminate {
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+/* Handle styling */
+.graph-canvas .react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--border);
+  border: 2px solid var(--background);
+  transition: all 0.2s ease;
+}
+
+.graph-canvas .react-flow__handle:hover {
+  background-color: var(--brand-500);
+  transform: scale(1.2);
+}
+
+.graph-canvas .react-flow__handle-left {
+  left: -6px;
+}
+
+.graph-canvas .react-flow__handle-right {
+  right: -6px;
+}
+
+/* Node base styling - override React Flow defaults */
+.graph-canvas .react-flow__node {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Selection styles */
+.graph-canvas .react-flow__node.selected {
+  outline: none;
+}
+
+.graph-canvas .react-flow__edge.selected path {
+  stroke: var(--brand-500);
+  stroke-width: 3;
+}
+
+/* Attribution removal (requires pro license) */
+.graph-canvas .react-flow__attribution {
+  display: none;
+}
+
+/* Panel styling */
+.graph-canvas .react-flow__panel {
+  margin: 12px;
+}
+
+/* Retro theme overrides */
+.retro .graph-canvas .react-flow__handle,
+.retro .graph-canvas .react-flow__minimap {
+  border-radius: 0 !important;
+}
+
+.retro .graph-canvas .react-flow__node {
+  border-radius: 0 !important;
+}
+
+/* Graph Filter Highlight States */
+
+/* Matched node - direct search/filter match */
+.graph-node-matched {
+  box-shadow:
+    0 0 0 3px var(--brand-500),
+    0 0 20px 4px var(--brand-500);
+  border-color: var(--brand-500) !important;
+  z-index: 10;
+}
+
+/* Animated glow for matched nodes */
+@keyframes matched-node-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px var(--brand-500),
+      0 0 15px 2px var(--brand-500);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px var(--brand-500),
+      0 0 25px 6px var(--brand-500);
+  }
+}
+
+.graph-node-matched {
+  animation: matched-node-glow 2s ease-in-out infinite;
+}
+
+/* Highlighted path node - part of the dependency path */
+.graph-node-highlighted {
+  box-shadow:
+    0 0 0 2px var(--brand-400),
+    0 0 12px 2px var(--brand-400);
+  z-index: 5;
+}
+
+/* Dimmed node - not part of filter results */
+.graph-node-dimmed {
+  opacity: 0.25;
+  filter: grayscale(60%);
+  transition:
+    opacity 0.3s ease,
+    filter 0.3s ease;
+}
+
+.graph-node-dimmed:hover {
+  opacity: 0.4;
+  filter: grayscale(40%);
+}
+
+/* Highlighted edge styles */
+.graph-edge-highlighted path {
+  stroke: var(--brand-500) !important;
+  stroke-width: 4px !important;
+  filter: drop-shadow(0 0 6px var(--brand-500));
+}
+
+/* Dimmed edge styles */
+.graph-edge-dimmed path {
+  opacity: 0.15;
+  stroke-width: 1px !important;
+  filter: none !important;
+}
+
+/* Reduce motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .graph-canvas .animated-edge path,
+  .graph-canvas .edge-flowing path,
+  .animate-pulse-subtle,
+  .animate-progress-indeterminate,
+  .graph-node-matched {
+    animation: none;
+  }
 }

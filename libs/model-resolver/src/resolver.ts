@@ -31,6 +31,12 @@ export function resolveModelString(
     return modelKey;
   }
 
+  // GLM models - pass through unchanged (case-insensitive check)
+  if (modelKey.toUpperCase().startsWith('GLM-')) {
+    console.log(`[ModelResolver] Using GLM model: ${modelKey}`);
+    return modelKey;
+  }
+
   // Look up Claude model alias
   const resolved = CLAUDE_MODEL_MAP[modelKey];
   if (resolved) {

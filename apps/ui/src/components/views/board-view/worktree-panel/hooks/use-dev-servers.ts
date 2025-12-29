@@ -114,13 +114,32 @@ export function useDevServers({ projectPath }: UseDevServersOptions) {
 
   const handleOpenDevServerUrl = useCallback(
     (worktree: WorktreeInfo) => {
-      const targetPath = worktree.isMain ? projectPath : worktree.path;
-      const serverInfo = runningDevServers.get(targetPath);
+      const serverInfo = runningDevServers.get(getWorktreeKey(worktree));
       if (serverInfo) {
         window.open(serverInfo.url, '_blank');
       }
     },
-    [projectPath, runningDevServers]
+    [runningDevServers, getWorktreeKey]
+  );
+
+  const handleOpenDevServerInElectron = useCallback(
+    async (worktree: WorktreeInfo) => {
+      const serverInfo = runningDevServers.get(getWorktreeKey(worktree));
+      if (serverInfo) {
+        const api = getElectronAPI();
+        if (api?.openDevServerPreview) {
+          const title = `Dev Server - ${worktree.branch} (:${serverInfo.port})`;
+          const result = await api.openDevServerPreview(serverInfo.url, title);
+          if (!result.success) {
+            toast.error(result.error || 'Failed to open dev server preview');
+          }
+        } else {
+          // Fallback to browser if Electron API is not available
+          window.open(serverInfo.url, '_blank');
+        }
+      }
+    },
+    [runningDevServers, getWorktreeKey]
   );
 
   const isDevServerRunning = useCallback(
@@ -146,5 +165,6 @@ export function useDevServers({ projectPath }: UseDevServersOptions) {
     handleStartDevServer,
     handleStopDevServer,
     handleOpenDevServerUrl,
+    handleOpenDevServerInElectron,
   };
 }

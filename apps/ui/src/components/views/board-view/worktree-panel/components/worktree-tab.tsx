@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, Globe, Loader2, CircleDot, GitPullRequest } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import type { WorktreeInfo, BranchInfo, DevServerInfo, PRInfo } from '../types';
+import type { WorktreeInfo, BranchInfo, DevServerInfo, PRInfo, GitRepoStatus } from '../types';
 import { BranchSwitchDropdown } from './branch-switch-dropdown';
 import { WorktreeActionsDropdown } from './worktree-actions-dropdown';
 
@@ -27,6 +27,7 @@ interface WorktreeTabProps {
   isStartingDevServer: boolean;
   aheadCount: number;
   behindCount: number;
+  gitRepoStatus: GitRepoStatus;
   onSelectWorktree: (worktree: WorktreeInfo) => void;
   onBranchDropdownOpenChange: (open: boolean) => void;
   onActionsDropdownOpenChange: (open: boolean) => void;
@@ -44,6 +45,7 @@ interface WorktreeTabProps {
   onStartDevServer: (worktree: WorktreeInfo) => void;
   onStopDevServer: (worktree: WorktreeInfo) => void;
   onOpenDevServerUrl: (worktree: WorktreeInfo) => void;
+  onOpenDevServerInElectron: (worktree: WorktreeInfo) => void;
 }
 
 export function WorktreeTab({
@@ -67,6 +69,7 @@ export function WorktreeTab({
   isStartingDevServer,
   aheadCount,
   behindCount,
+  gitRepoStatus,
   onSelectWorktree,
   onBranchDropdownOpenChange,
   onActionsDropdownOpenChange,
@@ -84,6 +87,7 @@ export function WorktreeTab({
   onStartDevServer,
   onStopDevServer,
   onOpenDevServerUrl,
+  onOpenDevServerInElectron,
 }: WorktreeTabProps) {
   let prBadge: JSX.Element | null = null;
   if (worktree.pr) {
@@ -320,6 +324,7 @@ export function WorktreeTab({
         isStartingDevServer={isStartingDevServer}
         isDevServerRunning={isDevServerRunning}
         devServerInfo={devServerInfo}
+        gitRepoStatus={gitRepoStatus}
         onOpenChange={onActionsDropdownOpenChange}
         onPull={onPull}
         onPush={onPush}
@@ -332,6 +337,7 @@ export function WorktreeTab({
         onStartDevServer={onStartDevServer}
         onStopDevServer={onStopDevServer}
         onOpenDevServerUrl={onOpenDevServerUrl}
+        onOpenDevServerInElectron={onOpenDevServerInElectron}
       />
     </div>
   );

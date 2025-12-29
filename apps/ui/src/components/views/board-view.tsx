@@ -9,7 +9,9 @@ import {
 import { useAppStore, Feature } from '@/store/app-store';
 import { getElectronAPI } from '@/lib/electron';
 import type { AutoModeEvent } from '@/types/electron';
+import type { BacklogPlanResult } from '@automaker/types';
 import { pathsEqual } from '@/lib/utils';
+import { toast } from 'sonner';
 import { getBlockingDependencies } from '@automaker/dependency-resolver';
 import { BoardBackgroundModal } from '@/components/dialogs/board-background-modal';
 import { RefreshCw } from 'lucide-react';
@@ -21,9 +23,11 @@ import { BoardHeader } from './board-view/board-header';
 import { BoardSearchBar } from './board-view/board-search-bar';
 import { BoardControls } from './board-view/board-controls';
 import { KanbanBoard } from './board-view/kanban-board';
+import { GraphView } from './graph-view';
 import {
   AddFeatureDialog,
   AgentOutputModal,
+  BacklogPlanDialog,
   CompletedFeaturesModal,
   ArchiveAllVerifiedDialog,
   DeleteCompletedFeatureDialog,
@@ -37,6 +41,7 @@ import { DeleteWorktreeDialog } from './board-view/dialogs/delete-worktree-dialo
 import { CommitWorktreeDialog } from './board-view/dialogs/commit-worktree-dialog';
 import { CreatePRDialog } from './board-view/dialogs/create-pr-dialog';
 import { CreateBranchDialog } from './board-view/dialogs/create-branch-dialog';
+import { StagedChangesDialog } from './board-view/dialogs/staged-changes-dialog';
 import { WorktreePanel } from './board-view/worktree-panel';
 import type { PRInfo, WorktreeInfo } from './board-view/worktree-panel/types';
 import { COLUMNS } from './board-view/constants';
@@ -69,6 +74,8 @@ export function BoardView() {
     aiProfiles,
     kanbanCardDetailLevel,
     setKanbanCardDetailLevel,
+    boardViewMode,
+    setBoardViewMode,
     specCreatingForProject,
     setSpecCreatingForProject,
     pendingPlanApproval,
@@ -104,12 +111,24 @@ export function BoardView() {
   // State for viewing plan in read-only mode
   const [viewPlanFeature, setViewPlanFeature] = useState<Feature | null>(null);
 
+  // State for spawn task mode
+  const [spawnParentFeature, setSpawnParentFeature] = useState<Feature | null>(null);
+
   // Worktree dialog states
   const [showCreateWorktreeDialog, setShowCreateWorktreeDialog] = useState(false);
   const [showDeleteWorktreeDialog, setShowDeleteWorktreeDialog] = useState(false);
   const [showCommitWorktreeDialog, setShowCommitWorktreeDialog] = useState(false);
   const [showCreatePRDialog, setShowCreatePRDialog] = useState(false);
   const [showCreateBranchDialog, setShowCreateBranchDialog] = useState(false);
+  const [showStagedChangesDialog, setShowStagedChangesDialog] = useState(false);
+  const [stagedChangesInfo, setStagedChangesInfo] = useState<{
+    feature: Feature;
+    suggestedMessage: string;
+    diffSummary: string;
+    filesChanged: number;
+    insertions: number;
+    deletions: number;
+  } | null>(null);
   const [selectedWorktreeForAction, setSelectedWorktreeForAction] = useState<{
     path: string;
     branch: string;
@@ -118,6 +137,11 @@ export function BoardView() {
     changedFilesCount?: number;
   } | null>(null);
   const [worktreeRefreshKey, setWorktreeRefreshKey] = useState(0);
+
+  // Backlog plan dialog state
+  const [showPlanDialog, setShowPlanDialog] = useState(false);
+  const [pendingBacklogPlan, setPendingBacklogPlan] = useState<BacklogPlanResult | null>(null);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
 
   // Follow-up state hook
   const {
@@ -369,6 +393,7 @@ export function BoardView() {
     handleSendFollowUp,
     handleCommitFeature,
     handleMergeFeature,
+    handleStageChanges,
     handleCompleteFeature,
     handleUnarchiveFeature,
     handleViewOutput,
@@ -422,6 +447,47 @@ export function BoardView() {
     },
     currentWorktreeBranch,
   });
+
+  // Handler for staging changes from a feature worktree (wrapper for dialog)
+  const onStageChanges = useCallback(
+    async (feature: Feature) => {
+      const result = await handleStageChanges(feature);
+      if (result?.success && result.staged) {
+        setStagedChangesInfo({
+          feature,
+          suggestedMessage: result.suggestedMessage || `feat: merge feature/${feature.id}`,
+          diffSummary: result.diffSummary || 'No changes staged',
+          filesChanged: result.filesChanged || 0,
+          insertions: result.insertions || 0,
+          deletions: result.deletions || 0,
+        });
+        setShowStagedChangesDialog(true);
+      }
+    },
+    [handleStageChanges]
+  );
+
+  // Handler for aborting a staged merge
+  const handleAbortStagedMerge = useCallback(async () => {
+    if (!currentProject) return;
+    try {
+      const api = getElectronAPI();
+      // Execute git merge --abort to clean up the staging
+      // We'll use the Bash API or a direct exec call
+      // For now, we'll just close the dialog - the backend should handle cleanup
+      setStagedChangesInfo(null);
+      setShowStagedChangesDialog(false);
+    } catch (error) {
+      console.error('[BoardView] Error aborting merge:', error);
+    }
+  }, [currentProject]);
+
+  // Handler for when staged changes are committed
+  const handleStagedChangesCommitted = useCallback(() => {
+    loadFeatures();
+    setStagedChangesInfo(null);
+    setShowStagedChangesDialog(false);
+  }, [loadFeatures]);
 
   // Handler for addressing PR comments - creates a feature and starts it automatically
   const handleAddressPRComments = useCallback(
@@ -571,6 +637,37 @@ export function BoardView() {
 
     return unsubscribe;
   }, [currentProject]);
+
+  // Listen for backlog plan events (for background generation)
+  useEffect(() => {
+    const api = getElectronAPI();
+    if (!api?.backlogPlan) return;
+
+    const unsubscribe = api.backlogPlan.onEvent(
+      (event: { type: string; result?: BacklogPlanResult; error?: string }) => {
+        if (event.type === 'backlog_plan_complete') {
+          setIsGeneratingPlan(false);
+          if (event.result && event.result.changes?.length > 0) {
+            setPendingBacklogPlan(event.result);
+            toast.success('Plan ready! Click to review.', {
+              duration: 10000,
+              action: {
+                label: 'Review',
+                onClick: () => setShowPlanDialog(true),
+              },
+            });
+          } else {
+            toast.info('No changes generated. Try again with a different prompt.');
+          }
+        } else if (event.type === 'backlog_plan_error') {
+          setIsGeneratingPlan(false);
+          toast.error(`Plan generation failed: ${event.error}`);
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (!autoMode.isRunning || !currentProject) {
@@ -929,6 +1026,7 @@ export function BoardView() {
           }
         }}
         onAddFeature={() => setShowAddDialog(true)}
+        onOpenPlanDialog={() => setShowPlanDialog(true)}
         addFeatureShortcut={{
           key: shortcuts.addFeature,
           action: () => setShowAddDialog(true),
@@ -989,40 +1087,70 @@ export function BoardView() {
             completedCount={completedFeatures.length}
             kanbanCardDetailLevel={kanbanCardDetailLevel}
             onDetailLevelChange={setKanbanCardDetailLevel}
+            boardViewMode={boardViewMode}
+            onBoardViewModeChange={setBoardViewMode}
           />
         </div>
-        {/* Kanban Columns */}
-        <KanbanBoard
-          sensors={sensors}
-          collisionDetectionStrategy={collisionDetectionStrategy}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          activeFeature={activeFeature}
-          getColumnFeatures={getColumnFeatures}
-          backgroundImageStyle={backgroundImageStyle}
-          backgroundSettings={backgroundSettings}
-          onEdit={(feature) => setEditingFeature(feature)}
-          onDelete={(featureId) => handleDeleteFeature(featureId)}
-          onViewOutput={handleViewOutput}
-          onVerify={handleVerifyFeature}
-          onResume={handleResumeFeature}
-          onForceStop={handleForceStopFeature}
-          onManualVerify={handleManualVerify}
-          onMoveBackToInProgress={handleMoveBackToInProgress}
-          onFollowUp={handleOpenFollowUp}
-          onCommit={handleCommitFeature}
-          onComplete={handleCompleteFeature}
-          onImplement={handleStartImplementation}
-          onViewPlan={(feature) => setViewPlanFeature(feature)}
-          onApprovePlan={handleOpenApprovalDialog}
-          featuresWithContext={featuresWithContext}
-          runningAutoTasks={runningAutoTasks}
-          shortcuts={shortcuts}
-          onStartNextFeatures={handleStartNextFeatures}
-          onShowSuggestions={() => setShowSuggestionsDialog(true)}
-          suggestionsCount={suggestionsCount}
-          onArchiveAllVerified={() => setShowArchiveAllVerifiedDialog(true)}
-        />
+        {/* View Content - Kanban or Graph */}
+        {boardViewMode === 'kanban' ? (
+          <KanbanBoard
+            sensors={sensors}
+            collisionDetectionStrategy={collisionDetectionStrategy}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            activeFeature={activeFeature}
+            getColumnFeatures={getColumnFeatures}
+            backgroundImageStyle={backgroundImageStyle}
+            backgroundSettings={backgroundSettings}
+            onEdit={(feature) => setEditingFeature(feature)}
+            onDelete={(featureId) => handleDeleteFeature(featureId)}
+            onViewOutput={handleViewOutput}
+            onVerify={handleVerifyFeature}
+            onResume={handleResumeFeature}
+            onForceStop={handleForceStopFeature}
+            onManualVerify={handleManualVerify}
+            onMoveBackToInProgress={handleMoveBackToInProgress}
+            onFollowUp={handleOpenFollowUp}
+            onCommit={handleCommitFeature}
+            onComplete={handleCompleteFeature}
+            onImplement={handleStartImplementation}
+            onViewPlan={(feature) => setViewPlanFeature(feature)}
+            onApprovePlan={handleOpenApprovalDialog}
+            onSpawnTask={(feature) => {
+              setSpawnParentFeature(feature);
+              setShowAddDialog(true);
+            }}
+            onStageChanges={onStageChanges}
+            featuresWithContext={featuresWithContext}
+            runningAutoTasks={runningAutoTasks}
+            shortcuts={shortcuts}
+            onStartNextFeatures={handleStartNextFeatures}
+            onShowSuggestions={() => setShowSuggestionsDialog(true)}
+            suggestionsCount={suggestionsCount}
+            onArchiveAllVerified={() => setShowArchiveAllVerifiedDialog(true)}
+          />
+        ) : (
+          <GraphView
+            features={hookFeatures}
+            runningAutoTasks={runningAutoTasks}
+            currentWorktreePath={currentWorktreePath}
+            currentWorktreeBranch={currentWorktreeBranch}
+            projectPath={currentProject?.path || null}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onEditFeature={(feature) => setEditingFeature(feature)}
+            onViewOutput={handleViewOutput}
+            onStartTask={handleStartImplementation}
+            onStopTask={handleForceStopFeature}
+            onResumeTask={handleResumeFeature}
+            onUpdateFeature={updateFeature}
+            onSpawnTask={(feature) => {
+              setSpawnParentFeature(feature);
+              setShowAddDialog(true);
+            }}
+            onDeleteTask={(feature) => handleDeleteFeature(feature.id)}
+          />
+        )}
       </div>
 
       {/* Board Background Modal */}
@@ -1055,7 +1183,12 @@ export function BoardView() {
       {/* Add Feature Dialog */}
       <AddFeatureDialog
         open={showAddDialog}
-        onOpenChange={setShowAddDialog}
+        onOpenChange={(open) => {
+          setShowAddDialog(open);
+          if (!open) {
+            setSpawnParentFeature(null);
+          }
+        }}
         onAdd={handleAddFeature}
         categorySuggestions={categorySuggestions}
         branchSuggestions={branchSuggestions}
@@ -1066,6 +1199,8 @@ export function BoardView() {
         isMaximized={isMaximized}
         showProfilesOnly={showProfilesOnly}
         aiProfiles={aiProfiles}
+        parentFeature={spawnParentFeature}
+        allFeatures={hookFeatures}
       />
 
       {/* Edit Feature Dialog */}
@@ -1128,6 +1263,18 @@ export function BoardView() {
         setSuggestions={updateSuggestions}
         isGenerating={isGeneratingSuggestions}
         setIsGenerating={setIsGeneratingSuggestions}
+      />
+
+      {/* Backlog Plan Dialog */}
+      <BacklogPlanDialog
+        open={showPlanDialog}
+        onClose={() => setShowPlanDialog(false)}
+        projectPath={currentProject.path}
+        onPlanApplied={loadFeatures}
+        pendingPlanResult={pendingBacklogPlan}
+        setPendingPlanResult={setPendingBacklogPlan}
+        isGeneratingPlan={isGeneratingPlan}
+        setIsGeneratingPlan={setIsGeneratingPlan}
       />
 
       {/* Plan Approval Dialog */}
@@ -1261,6 +1408,20 @@ export function BoardView() {
           setWorktreeRefreshKey((k) => k + 1);
           setSelectedWorktreeForAction(null);
         }}
+      />
+
+      <StagedChangesDialog
+        open={showStagedChangesDialog}
+        onOpenChange={setShowStagedChangesDialog}
+        feature={stagedChangesInfo?.feature || null}
+        suggestedMessage={stagedChangesInfo?.suggestedMessage || ''}
+        diffSummary={stagedChangesInfo?.diffSummary || ''}
+        filesChanged={stagedChangesInfo?.filesChanged || 0}
+        insertions={stagedChangesInfo?.insertions || 0}
+        deletions={stagedChangesInfo?.deletions || 0}
+        projectPath={currentProject?.path || ''}
+        onCommitted={handleStagedChangesCommitted}
+        onAbort={handleAbortStagedMerge}
       />
     </div>
   );

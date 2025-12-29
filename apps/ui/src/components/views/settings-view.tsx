@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
+import { syncProjectSettingsToServer } from '@/hooks/use-settings-migration';
+import { getHttpApiClient } from '@/lib/http-api-client';
 
 import { useCliStatus, useSettingsView } from './settings-view/hooks';
 import { NAV_ITEMS } from './settings-view/config/navigation';
@@ -10,7 +12,9 @@ import { SettingsNavigation } from './settings-view/components/settings-navigati
 import { ApiKeysSection } from './settings-view/api-keys/api-keys-section';
 import { ClaudeUsageSection } from './settings-view/api-keys/claude-usage-section';
 import { ClaudeCliStatus } from './settings-view/cli-status/claude-cli-status';
+import { ClaudeMdSettings } from './settings-view/claude/claude-md-settings';
 import { AIEnhancementSection } from './settings-view/ai-enhancement';
+import { McpSettingsPanel } from '@/components/settings/mcp-settings-panel';
 import { AppearanceSection } from './settings-view/appearance/appearance-section';
 import { TerminalSection } from './settings-view/terminal/terminal-section';
 import { AudioSection } from './settings-view/audio/audio-section';
@@ -45,13 +49,50 @@ export function SettingsView() {
     setDefaultAIProfileId,
     aiProfiles,
     apiKeys,
+    validationModel,
+    setValidationModel,
+    autoLoadClaudeMd,
+    setAutoLoadClaudeMd,
+    getWorktreeSetupScript,
+    setWorktreeSetupScript,
   } = useAppStore();
 
+  // Get the worktree setup script for the current project
+  const worktreeSetupScript = currentProject ? getWorktreeSetupScript(currentProject.path) : '';
+
+  // Load worktree setup script from server when project changes
+  useEffect(() => {
+    if (!currentProject) return;
+
+    const loadProjectSettings = async () => {
+      try {
+        const api = getHttpApiClient();
+        const result = await api.settings.getProject(currentProject.path);
+        if (result.success && result.settings?.worktreeSetupScript !== undefined) {
+          setWorktreeSetupScript(currentProject.path, result.settings.worktreeSetupScript);
+        }
+      } catch (error) {
+        console.error('[Settings] Failed to load project settings:', error);
+      }
+    };
+
+    loadProjectSettings();
+  }, [currentProject, setWorktreeSetupScript]);
+
+  // Handler for updating worktree setup script (persists to server)
+  const handleWorktreeSetupScriptChange = useCallback(
+    (script: string) => {
+      if (!currentProject) return;
+      setWorktreeSetupScript(currentProject.path, script);
+      // Also sync to server for persistence
+      syncProjectSettingsToServer(currentProject.path, { worktreeSetupScript: script });
+    },
+    [currentProject, setWorktreeSetupScript]
+  );
+
   // Hide usage tracking when using API key (only show for Claude Code CLI users)
-  // Also hide on Windows for now (CLI usage command not supported)
-  const isWindows =
-    typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('win');
-  const showUsageTracking = !apiKeys.anthropic && !isWindows;
+  // Windows is now supported via node-pty and ccusage fallback
+  const showUsageTracking = !apiKeys.anthropic;
 
   // Convert electron Project to settings-view Project type
   const convertProject = (project: ElectronProject | null): SettingsProject | null => {
@@ -100,11 +141,17 @@ export function SettingsView() {
               isChecking={isCheckingClaudeCli}
               onRefresh={handleRefreshClaudeCli}
             />
+            <ClaudeMdSettings
+              autoLoadClaudeMd={autoLoadClaudeMd}
+              onAutoLoadClaudeMdChange={setAutoLoadClaudeMd}
+            />
             {showUsageTracking && <ClaudeUsageSection />}
           </div>
         );
       case 'ai-enhancement':
         return <AIEnhancementSection />;
+      case 'mcp':
+        return <McpSettingsPanel />;
       case 'appearance':
         return (
           <AppearanceSection
@@ -134,6 +181,9 @@ export function SettingsView() {
             defaultRequirePlanApproval={defaultRequirePlanApproval}
             defaultAIProfileId={defaultAIProfileId}
             aiProfiles={aiProfiles}
+            validationModel={validationModel}
+            worktreeSetupScript={worktreeSetupScript}
+            hasProject={!!currentProject}
             onShowProfilesOnlyChange={setShowProfilesOnly}
             onDefaultSkipTestsChange={setDefaultSkipTests}
             onEnableDependencyBlockingChange={setEnableDependencyBlocking}
@@ -141,6 +191,8 @@ export function SettingsView() {
             onDefaultPlanningModeChange={setDefaultPlanningMode}
             onDefaultRequirePlanApprovalChange={setDefaultRequirePlanApproval}
             onDefaultAIProfileIdChange={setDefaultAIProfileId}
+            onValidationModelChange={setValidationModel}
+            onWorktreeSetupScriptChange={handleWorktreeSetupScriptChange}
           />
         );
       case 'danger':
