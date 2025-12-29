@@ -218,8 +218,28 @@ export async function getMCPPermissionSettings(
 }
 
 /**
+ * Build a merged environment object that includes process.env with server.env taking precedence.
+ * This ensures commands like 'uvx', 'npx', etc. can be found on Windows where PATH is essential.
+ */
+function buildMergedEnv(serverEnv?: Record<string, string>): Record<string, string> {
+  const mergedEnv: Record<string, string> = {};
+  // First, copy all process.env values (PATH, etc.)
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      mergedEnv[key] = value;
+    }
+  }
+  // Server env takes precedence over process.env
+  if (serverEnv) {
+    Object.assign(mergedEnv, serverEnv);
+  }
+  return mergedEnv;
+}
+
+/**
  * Convert a settings MCPServerConfig to SDK McpServerConfig format.
  * Validates required fields and throws informative errors if missing.
+ * For stdio servers, merges process.env with server.env to ensure PATH is inherited.
  */
 function convertToSdkFormat(server: MCPServerConfig): McpServerConfig {
   if (server.type === 'sse') {
@@ -252,6 +272,8 @@ function convertToSdkFormat(server: MCPServerConfig): McpServerConfig {
     type: 'stdio',
     command: server.command,
     args: server.args,
-    env: server.env,
+    // Merge process.env with server.env to ensure PATH and other essential variables are inherited
+    // This fixes issues on Windows where commands like 'uvx', 'npx' etc. are not found
+    env: buildMergedEnv(server.env),
   };
 }

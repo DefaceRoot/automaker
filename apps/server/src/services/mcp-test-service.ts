@@ -12,7 +12,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { MCPServerConfig, MCPToolInfo } from '@automaker/types';
 import type { SettingsService } from './settings-service.js';
 
-const DEFAULT_TIMEOUT = 10000; // 10 seconds
+const DEFAULT_TIMEOUT = 30000; // 30 seconds (increased for slower-starting servers)
 
 export interface MCPTestResult {
   success: boolean;
@@ -41,6 +41,11 @@ export class MCPTestService {
   async testServer(serverConfig: MCPServerConfig): Promise<MCPTestResult> {
     const startTime = Date.now();
     let client: Client | null = null;
+    let transport:
+      | StdioClientTransport
+      | SSEClientTransport
+      | StreamableHTTPClientTransport
+      | null = null;
 
     try {
       client = new Client({
@@ -49,7 +54,7 @@ export class MCPTestService {
       });
 
       // Create transport based on server type
-      const transport = await this.createTransport(serverConfig);
+      transport = await this.createTransport(serverConfig);
 
       // Connect with timeout
       await Promise.race([
@@ -92,9 +97,20 @@ export class MCPTestService {
       };
     } catch (error) {
       const connectionTime = Date.now() - startTime;
+      let errorMessage = this.getErrorMessage(error);
+
+      // Check if we have stderr output that can provide more context
+      if (transport && 'stderr' in transport) {
+        const stderrMessage = (transport as StdioClientTransport & { _lastStderr?: string })
+          ._lastStderr;
+        if (stderrMessage) {
+          errorMessage = `${errorMessage} - Server output: ${stderrMessage}`;
+        }
+      }
+
       return {
         success: false,
-        error: this.getErrorMessage(error),
+        error: errorMessage,
         connectionTime,
       };
     } finally {
@@ -180,11 +196,37 @@ export class MCPTestService {
       throw new Error('Command is required for stdio transport');
     }
 
-    return new StdioClientTransport({
+    // Merge config.env with process.env to inherit PATH and other essential variables
+    // This ensures commands like 'uvx', 'npx', etc. can be found on Windows
+    const mergedEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) {
+        mergedEnv[key] = value;
+      }
+    }
+    // Config env takes precedence over process.env
+    if (config.env) {
+      Object.assign(mergedEnv, config.env);
+    }
+
+    const transport = new StdioClientTransport({
       command: config.command,
       args: config.args,
-      env: config.env,
+      env: mergedEnv,
+      stderr: 'pipe', // Capture stderr for better error messages
     });
+
+    // Capture stderr output to provide better error messages
+    transport.stderr?.on('data', (data: Buffer) => {
+      const message = data.toString().trim();
+      if (message) {
+        console.error(`[MCP:${config.name}] stderr:`, message);
+        // Store the last stderr message for error reporting
+        (transport as StdioClientTransport & { _lastStderr?: string })._lastStderr = message;
+      }
+    });
+
+    return transport;
   }
 
   /**
