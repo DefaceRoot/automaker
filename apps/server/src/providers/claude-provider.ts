@@ -16,7 +16,7 @@ import type {
 import { withIdleTimeout, isStreamIdleTimeoutError } from '@automaker/utils';
 
 /** Idle timeout for SDK streaming - if no messages for this duration, consider it stalled */
-const STREAM_IDLE_TIMEOUT_MS = 120000; // 2 minutes
+const STREAM_IDLE_TIMEOUT_MS = 300000; // 5 minutes
 
 export class ClaudeProvider extends BaseProvider {
   getName(): string {

@@ -515,7 +515,7 @@ export class DocsService {
     });
 
     // Retry logic for transient CLI errors (e.g., when multiple processes start simultaneously)
-    const maxRetries = 2;
+    const maxRetries = 5;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
