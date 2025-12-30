@@ -8,8 +8,7 @@
 import type { Request, Response } from 'express';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
-import { getErrorMessage, logError } from '../common.js';
+import { getErrorMessage, logError, resolveWorktreePath } from '../common.js';
 
 const execAsync = promisify(exec);
 
@@ -30,19 +29,22 @@ export function createMergeHandler() {
         return;
       }
 
-      const branchName = `feature/${featureId}`;
-      // Git worktrees are stored in project directory
-      const worktreePath = path.join(projectPath, '.worktrees', featureId);
+      // Resolve worktree path and branch name from feature
+      const worktreeInfo = await resolveWorktreePath(projectPath, featureId);
+      if (!worktreeInfo) {
+        res.status(400).json({
+          success: false,
+          error: 'Feature does not have a worktree or branch name',
+        });
+        return;
+      }
 
-      // Get current branch
-      const { stdout: currentBranch } = await execAsync('git rev-parse --abbrev-ref HEAD', {
-        cwd: projectPath,
-      });
+      const { branchName, path: worktreePath } = worktreeInfo;
 
-      // Merge the feature branch
+      // Merge the feature branch (branch names with / need quoting)
       const mergeCmd = options?.squash
-        ? `git merge --squash ${branchName}`
-        : `git merge ${branchName} -m "${options?.message || `Merge ${branchName}`}"`;
+        ? `git merge --squash "${branchName}"`
+        : `git merge "${branchName}" -m "${options?.message || `Merge ${branchName}`}"`;
 
       await execAsync(mergeCmd, { cwd: projectPath });
 
@@ -58,7 +60,7 @@ export function createMergeHandler() {
         await execAsync(`git worktree remove "${worktreePath}" --force`, {
           cwd: projectPath,
         });
-        await execAsync(`git branch -D ${branchName}`, { cwd: projectPath });
+        await execAsync(`git branch -D "${branchName}"`, { cwd: projectPath });
       } catch {
         // Cleanup errors are non-fatal
       }

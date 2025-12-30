@@ -31,6 +31,7 @@ export type EventType =
   | 'docs:doc-progress'
   | 'docs:doc-completed'
   | 'docs:doc-error'
-  | 'docs:generation-completed';
+  | 'docs:generation-completed'
+  | 'claude:usage-update';
 
 export type EventCallback = (type: EventType, payload: unknown) => void;

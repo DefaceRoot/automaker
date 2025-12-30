@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore } from '@/store/app-store';
+import { useAppStore, type DocsLogsByDocType } from '@/store/app-store';
 import { getElectronAPI } from '@/lib/electron';
 import type { DocsEvent } from '@/lib/http-api-client';
 
@@ -16,17 +16,25 @@ export function useDocsEvents() {
     currentProject,
     docsGeneratingByProject,
     docsProgressByProject,
+    docsLogsByProject,
     setDocsGenerating,
     setDocProgress,
     clearDocsProgress,
+    addDocToolCall,
+    appendDocOutput,
+    clearDocsLogs,
   } = useAppStore(
     useShallow((state) => ({
       currentProject: state.currentProject,
       docsGeneratingByProject: state.docsGeneratingByProject,
       docsProgressByProject: state.docsProgressByProject,
+      docsLogsByProject: state.docsLogsByProject,
       setDocsGenerating: state.setDocsGenerating,
       setDocProgress: state.setDocProgress,
       clearDocsProgress: state.clearDocsProgress,
+      addDocToolCall: state.addDocToolCall,
+      appendDocOutput: state.appendDocOutput,
+      clearDocsLogs: state.clearDocsLogs,
     }))
   );
 
@@ -35,6 +43,7 @@ export function useDocsEvents() {
   // Get project-specific docs state
   const isGenerating = projectPath ? (docsGeneratingByProject[projectPath] ?? false) : false;
   const progress = projectPath ? (docsProgressByProject[projectPath] ?? []) : [];
+  const logs: DocsLogsByDocType = projectPath ? (docsLogsByProject[projectPath] ?? {}) : {};
 
   // Handle docs events - listen globally for all projects
   useEffect(() => {
@@ -48,6 +57,8 @@ export function useDocsEvents() {
 
       switch (event.type) {
         case 'docs:generation-started':
+          // Clear previous logs when new generation starts
+          clearDocsLogs(eventProjectPath);
           // Mark generation as started for this project
           setDocsGenerating(eventProjectPath, true);
           // Initialize progress for all doc types
@@ -84,11 +95,21 @@ export function useDocsEvents() {
           // Mark generation as complete for this project
           setDocsGenerating(eventProjectPath, false);
           break;
+
+        case 'docs:doc-tool':
+          // Capture tool call for this doc type
+          addDocToolCall(eventProjectPath, event.docType, event.tool, event.input);
+          break;
+
+        case 'docs:doc-output':
+          // Append output for this doc type
+          appendDocOutput(eventProjectPath, event.docType, event.content);
+          break;
       }
     });
 
     return unsubscribe;
-  }, [setDocsGenerating, setDocProgress]);
+  }, [setDocsGenerating, setDocProgress, addDocToolCall, appendDocOutput, clearDocsLogs]);
 
   // Clear progress for the current project
   const clearProgress = useCallback(() => {
@@ -100,6 +121,7 @@ export function useDocsEvents() {
   return {
     isGenerating,
     progress,
+    logs,
     clearProgress,
   };
 }

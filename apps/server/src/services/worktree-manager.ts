@@ -207,14 +207,23 @@ export class WorktreeManager {
     // Create worktree command
     let createCmd: string;
     if (branchExists) {
-      createCmd = `git worktree add "${worktreePath}" ${actualBranchName}`;
+      createCmd = `git worktree add "${worktreePath}" "${actualBranchName}"`;
     } else {
       const base = baseBranch || 'HEAD';
-      createCmd = `git worktree add -b ${actualBranchName} "${worktreePath}" ${base}`;
+      createCmd = `git worktree add -b "${actualBranchName}" "${worktreePath}" ${base}`;
     }
 
     logger.info(`Creating worktree: ${createCmd}`);
     await execAsync(createCmd, { cwd: projectPath });
+
+    // Verify directory was actually created
+    const exists = await secureFs
+      .access(worktreePath)
+      .then(() => true)
+      .catch(() => false);
+    if (!exists) {
+      throw new Error(`Worktree directory was not created at ${worktreePath}`);
+    }
 
     // Verify creation
     const worktreeFiles = await secureFs.readdir(worktreePath);

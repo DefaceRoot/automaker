@@ -312,11 +312,11 @@ export function createCreateHandler(settingsService?: SettingsService) {
       let createCmd: string;
       if (branchExists) {
         // Use existing branch
-        createCmd = `git worktree add "${worktreePath}" ${actualBranchName}`;
+        createCmd = `git worktree add "${worktreePath}" "${actualBranchName}"`;
       } else {
         // Create new branch from base or HEAD
         const base = baseBranch || 'HEAD';
-        createCmd = `git worktree add -b ${actualBranchName} "${worktreePath}" ${base}`;
+        createCmd = `git worktree add -b "${actualBranchName}" "${worktreePath}" ${base}`;
       }
 
       console.log(

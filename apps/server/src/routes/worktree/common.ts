@@ -178,3 +178,76 @@ export async function ensureInitialCommit(repoPath: string): Promise<boolean> {
     }
   }
 }
+
+// ============================================================================
+// Worktree Resolution Utilities
+// ============================================================================
+
+/**
+ * Find a worktree by its branch name using git worktree list.
+ * This is the source of truth for worktree locations.
+ */
+export async function findWorktreeByBranch(
+  projectPath: string,
+  branchName: string
+): Promise<{ path: string; branch: string } | null> {
+  try {
+    const { stdout } = await execAsync('git worktree list --porcelain', { cwd: projectPath });
+
+    const lines = stdout.split('\n');
+    let currentPath: string | null = null;
+    let currentBranch: string | null = null;
+
+    for (const line of lines) {
+      if (line.startsWith('worktree ')) {
+        currentPath = line.slice(9);
+      } else if (line.startsWith('branch ')) {
+        currentBranch = line.slice(7).replace('refs/heads/', '');
+      } else if (line === '' && currentPath && currentBranch) {
+        if (currentBranch === branchName) {
+          const resolvedPath = path.isAbsolute(currentPath)
+            ? path.resolve(currentPath)
+            : path.resolve(projectPath, currentPath);
+          return { path: resolvedPath, branch: currentBranch };
+        }
+        currentPath = null;
+        currentBranch = null;
+      }
+    }
+
+    // Check last entry
+    if (currentPath && currentBranch && currentBranch === branchName) {
+      const resolvedPath = path.isAbsolute(currentPath)
+        ? path.resolve(currentPath)
+        : path.resolve(projectPath, currentPath);
+      return { path: resolvedPath, branch: currentBranch };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve worktree path for a feature by looking up its branchName
+ * and finding the actual worktree path from git.
+ */
+export async function resolveWorktreePath(
+  projectPath: string,
+  featureId: string
+): Promise<{ path: string; branchName: string } | null> {
+  try {
+    // Load feature to get branch name
+    const feature = await featureLoader.get(projectPath, featureId);
+    if (!feature?.branchName) return null;
+
+    // Find worktree by branch name using git
+    const worktreeInfo = await findWorktreeByBranch(projectPath, feature.branchName);
+    if (!worktreeInfo) return null;
+
+    return { path: worktreeInfo.path, branchName: feature.branchName };
+  } catch {
+    return null;
+  }
+}

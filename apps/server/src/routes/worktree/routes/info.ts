@@ -3,13 +3,7 @@
  */
 
 import type { Request, Response } from 'express';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
-import * as secureFs from '../../../lib/secure-fs.js';
-import { getErrorMessage, logError, normalizePath } from '../common.js';
-
-const execAsync = promisify(exec);
+import { getErrorMessage, logError, normalizePath, resolveWorktreePath } from '../common.js';
 
 export function createInfoHandler() {
   return async (req: Request, res: Response): Promise<void> => {
@@ -27,21 +21,18 @@ export function createInfoHandler() {
         return;
       }
 
-      // Check if worktree exists (git worktrees are stored in project directory)
-      const worktreePath = path.join(projectPath, '.worktrees', featureId);
-      try {
-        await secureFs.access(worktreePath);
-        const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', {
-          cwd: worktreePath,
-        });
-        res.json({
-          success: true,
-          worktreePath: normalizePath(worktreePath),
-          branchName: stdout.trim(),
-        });
-      } catch {
+      // Resolve worktree path from feature's branch name
+      const worktreeInfo = await resolveWorktreePath(projectPath, featureId);
+      if (!worktreeInfo) {
         res.json({ success: true, worktreePath: null, branchName: null });
+        return;
       }
+
+      res.json({
+        success: true,
+        worktreePath: normalizePath(worktreeInfo.path),
+        branchName: worktreeInfo.branchName,
+      });
     } catch (error) {
       logError(error, 'Get worktree info failed');
       res.status(500).json({ success: false, error: getErrorMessage(error) });

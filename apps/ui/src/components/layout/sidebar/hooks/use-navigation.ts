@@ -31,6 +31,7 @@ interface UseNavigationProps {
     agent: string;
     terminal: string;
     settings: string;
+    docs: string;
   };
   hideSpecEditor: boolean;
   hideContext: boolean;
@@ -115,6 +116,7 @@ export function useNavigation({
         id: 'docs',
         label: 'Documents',
         icon: Files,
+        shortcut: shortcuts.docs,
       },
     ];
 

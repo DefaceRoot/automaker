@@ -70,6 +70,78 @@ const DEFAULT_FORM_DATA: McpServerFormData = {
   customPrompt: '',
 };
 
+/**
+ * Convert Claude Desktop MCP config format to internal array format.
+ *
+ * Claude Desktop format: { mcpServers: { "server-id": { command, args, ... } } }
+ * Internal format: [{ id, name, enabled, transport: { type, command, args } }]
+ *
+ * @returns Converted array or null if not Claude Desktop format
+ */
+function convertClaudeDesktopFormat(input: unknown): McpServerConfig[] | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return null;
+  }
+
+  const obj = input as Record<string, unknown>;
+
+  // Check for mcpServers key (Claude Desktop format)
+  if (!obj.mcpServers || typeof obj.mcpServers !== 'object') {
+    return null;
+  }
+
+  const servers = obj.mcpServers as Record<string, unknown>;
+  const result: McpServerConfig[] = [];
+  const now = new Date().toISOString();
+
+  for (const [id, config] of Object.entries(servers)) {
+    if (!config || typeof config !== 'object') continue;
+
+    const serverConfig = config as Record<string, unknown>;
+
+    // Determine transport type based on presence of url vs command
+    const hasUrl = 'url' in serverConfig && typeof serverConfig.url === 'string';
+    const hasCommand = 'command' in serverConfig && typeof serverConfig.command === 'string';
+
+    // Also check for explicit type field
+    const explicitType = serverConfig.type as string | undefined;
+    const isHttp = explicitType === 'http' || (!explicitType && hasUrl);
+    const isStdio = explicitType === 'stdio' || (!explicitType && hasCommand && !hasUrl);
+
+    if (isHttp && hasUrl) {
+      result.push({
+        id,
+        name: (serverConfig.name as string) || id,
+        enabled: serverConfig.enabled !== false,
+        transport: {
+          type: 'http',
+          url: serverConfig.url as string,
+          headers: (serverConfig.headers as Record<string, string>) || undefined,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else if (isStdio && hasCommand) {
+      result.push({
+        id,
+        name: (serverConfig.name as string) || id,
+        enabled: serverConfig.enabled !== false,
+        transport: {
+          type: 'stdio',
+          command: serverConfig.command as string,
+          args: (serverConfig.args as string[]) || [],
+          env: (serverConfig.env as Record<string, string>) || undefined,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    // Skip entries that don't have required fields for either type
+  }
+
+  return result.length > 0 ? result : null;
+}
+
 function StatusIndicator({ testResult }: { testResult?: McpTestResult }) {
   if (!testResult) {
     return (
@@ -490,10 +562,19 @@ export function McpSettingsPanel() {
     // Validate JSON on change
     try {
       const parsed = JSON.parse(value);
-      if (!Array.isArray(parsed)) {
-        setJsonError('Configuration must be a JSON array');
+
+      // Try Claude Desktop format conversion
+      const converted = convertClaudeDesktopFormat(parsed);
+      if (converted) {
+        // Valid Claude Desktop format detected - no error
+        return;
       }
-    } catch (e) {
+
+      // Standard array validation
+      if (!Array.isArray(parsed)) {
+        setJsonError('Configuration must be a JSON array of server configurations');
+      }
+    } catch {
       // Don't show error while typing, only on save
     }
   };
@@ -514,13 +595,24 @@ export function McpSettingsPanel() {
         return;
       }
 
-      if (!Array.isArray(parsed)) {
-        setJsonError('Configuration must be a JSON array of server configurations');
+      // Try Claude Desktop format conversion first
+      let serverArray: unknown[];
+      const converted = convertClaudeDesktopFormat(parsed);
+      if (converted) {
+        serverArray = converted;
+        // Update the textarea to show the converted format
+        setJsonConfig(JSON.stringify(converted, null, 2));
+      } else if (Array.isArray(parsed)) {
+        serverArray = parsed;
+      } else {
+        setJsonError(
+          'Configuration must be a JSON array or Claude Desktop format ({ mcpServers: {...} })'
+        );
         setIsSavingJson(false);
         return;
       }
 
-      // Send to the backend for validation and saving
+      // Send converted array to the backend for validation and saving
       const api = getElectronAPI();
       if (!api.settings?.updateMcpConfig) {
         setJsonError('MCP config update not available');
@@ -528,7 +620,7 @@ export function McpSettingsPanel() {
         return;
       }
 
-      const response = await api.settings.updateMcpConfig(jsonConfig);
+      const response = await api.settings.updateMcpConfig(JSON.stringify(serverArray));
 
       if (response.success && response.servers) {
         // Update the local store with the normalized servers

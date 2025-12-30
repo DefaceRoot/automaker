@@ -624,6 +624,7 @@ export interface ElectronAPI {
   };
   claude?: {
     getUsage: () => Promise<ClaudeUsageResponse>;
+    onUsageUpdate?: (callback: (usage: ClaudeUsageResponse) => void) => () => void;
   };
   context?: {
     describeImage: (imagePath: string) => Promise<{
@@ -1115,6 +1116,10 @@ const getMockElectronAPI = (): ElectronAPI => {
           lastUpdated: new Date().toISOString(),
           userTimezone: 'UTC',
         };
+      },
+      onUsageUpdate: () => {
+        // Mock: no real-time updates in mock mode
+        return () => {};
       },
     },
   };

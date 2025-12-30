@@ -15,14 +15,28 @@ import { ProviderFactory } from '../providers/provider-factory.js';
 import type { ExecuteOptions } from '../providers/types.js';
 import * as secureFs from '../lib/secure-fs.js';
 import type { EventEmitter } from '../lib/events.js';
+import type { SettingsService } from './settings-service.js';
+import { computeZaiEnv, needsZaiEndpoint, getZaiCredentialsError } from '../lib/env-computation.js';
 import {
   DOC_TYPES,
   type DocType,
   type DocTypeInfo,
+  type GenerationMode,
   getDocSystemPrompt,
   getDocFilename,
   buildDocUserPrompt,
+  buildRegenerateUserPrompt,
 } from './docs-prompts.js';
+import {
+  type GitChanges,
+  type DocsGenerationManifest,
+  readDocsManifest,
+  writeDocsManifest,
+  getChangesSinceLastGeneration,
+  getCurrentCommitHash,
+  createManifest,
+  updateManifestDoc,
+} from './docs-manifest.js';
 
 /**
  * Status of a single document generation
@@ -117,18 +131,9 @@ async function buildCodebaseContext(projectPath: string): Promise<string> {
       // No package.json or can't read it
     }
 
-    // Try to read README.md
-    try {
-      const readmePath = path.join(projectPath, 'README.md');
-      const readmeContent = (await secureFs.readFile(readmePath, 'utf-8')) as string;
-      contextParts.push('\n## README.md Content (truncated)');
-      contextParts.push(readmeContent.substring(0, 3000));
-      if (readmeContent.length > 3000) {
-        contextParts.push('\n... (truncated)');
-      }
-    } catch {
-      // No README.md or can't read it
-    }
+    // NOTE: We intentionally do NOT include README.md or other markdown docs
+    // The codebase itself is the single source of truth for documentation generation
+    // Claude will use subagents to explore the actual code
 
     // Try to read tsconfig.json for TypeScript info
     try {
@@ -171,12 +176,45 @@ async function buildCodebaseContext(projectPath: string): Promise<string> {
   return contextParts.join('\n');
 }
 
+/**
+ * Clean document content by stripping any transitional/meta text that
+ * the agent may output before the actual markdown documentation.
+ *
+ * The agent sometimes outputs text like "Now I have all the information
+ * I need to create comprehensive Project Overview documentation. Let me
+ * generate it:" before starting the actual documentation.
+ *
+ * This function finds the first markdown heading and returns everything
+ * from that point onwards.
+ *
+ * @param content - The raw document content
+ * @returns The cleaned document content starting from the first heading
+ */
+function cleanDocContent(content: string): string {
+  if (!content) return content;
+
+  // Find the first line that starts with a markdown heading (# at start of line)
+  // This regex matches a line that starts with one or more # followed by a space
+  const headingMatch = content.match(/^(#{1,6}\s)/m);
+
+  if (headingMatch && headingMatch.index !== undefined) {
+    // Return everything from the first heading onwards
+    const cleaned = content.slice(headingMatch.index);
+    return cleaned;
+  }
+
+  // Fallback: if no heading found, return original content
+  return content;
+}
+
 export class DocsService {
   private events: EventEmitter;
+  private settingsService: SettingsService;
   private runningGenerations = new Map<string, RunningGeneration>();
 
-  constructor(events: EventEmitter) {
+  constructor(events: EventEmitter, settingsService: SettingsService) {
     this.events = events;
+    this.settingsService = settingsService;
   }
 
   /**
@@ -186,8 +224,9 @@ export class DocsService {
    *
    * @param projectPath - The project directory path
    * @param model - Optional model override (defaults to claude sonnet)
+   * @param mode - Generation mode: 'generate' for full, 'regenerate' for incremental updates
    */
-  async generateDocs(projectPath: string, model?: string): Promise<void> {
+  async generateDocs(projectPath: string, model?: string, mode?: GenerationMode): Promise<void> {
     // Check if generation is already running for this project
     if (this.runningGenerations.has(projectPath)) {
       throw new Error('Documentation generation is already running for this project');
@@ -195,6 +234,20 @@ export class DocsService {
 
     // Resolve the model to use
     const resolvedModel = resolveModelString(model, DEFAULT_MODELS.claude);
+
+    // Compute provider environment for GLM/Z.AI models
+    let providerEnv: Record<string, string> | null = null;
+    if (needsZaiEndpoint(resolvedModel)) {
+      const credentials = await this.settingsService.getCredentials();
+      providerEnv = computeZaiEnv(credentials);
+      if (!providerEnv) {
+        throw new Error(getZaiCredentialsError());
+      }
+    }
+
+    // Auto-detect mode if not provided
+    const effectiveMode = mode ?? (await this.detectMode(projectPath));
+    console.log(`[DocsService] Using mode: ${effectiveMode}`);
 
     // Create abort controller for this generation
     const abortController = new AbortController();
@@ -223,6 +276,7 @@ export class DocsService {
     this.emitDocsEvent('docs:generation-started', {
       projectPath,
       startedAt,
+      mode: effectiveMode,
       docTypes: DOC_TYPES.map((dt) => ({
         type: dt.type,
         displayName: dt.displayName,
@@ -248,6 +302,27 @@ export class DocsService {
       codebaseContext = `Project: ${projectName}\nPath: ${projectPath}`;
     }
 
+    // For regenerate mode, load existing docs and git changes
+    let existingDocs = new Map<DocType, string>();
+    let gitChanges: GitChanges | null = null;
+
+    if (effectiveMode === 'regenerate') {
+      console.log('[DocsService] Regenerate mode: Loading existing docs and git changes...');
+
+      // Load existing doc contents
+      for (const docTypeInfo of DOC_TYPES) {
+        const content = await this.getDocContent(projectPath, docTypeInfo.type);
+        if (content) {
+          existingDocs.set(docTypeInfo.type, content);
+        }
+      }
+      console.log(`[DocsService] Loaded ${existingDocs.size} existing documents`);
+
+      // Get git changes since last generation
+      gitChanges = await getChangesSinceLastGeneration(projectPath);
+      console.log(`[DocsService] Git changes: ${gitChanges.summary}`);
+    }
+
     // Run all doc generations in parallel
     this.runParallelGeneration(
       projectPath,
@@ -255,14 +330,38 @@ export class DocsService {
       codebaseContext,
       projectName,
       abortController,
-      progress
+      progress,
+      effectiveMode,
+      existingDocs,
+      gitChanges,
+      providerEnv
     ).catch((error) => {
       console.error('[DocsService] Parallel generation error:', error);
     });
   }
 
   /**
-   * Run documentation generations with limited concurrency to avoid overwhelming the CLI
+   * Detect whether to use generate or regenerate mode based on existing manifest
+   *
+   * @param projectPath - The project directory path
+   * @returns 'regenerate' if manifest exists, 'generate' otherwise
+   */
+  async detectMode(projectPath: string): Promise<GenerationMode> {
+    const manifest = await readDocsManifest(projectPath);
+    if (manifest) {
+      console.log(
+        `[DocsService] Found manifest from ${manifest.lastGeneratedAt}, using regenerate mode`
+      );
+      return 'regenerate';
+    }
+    console.log('[DocsService] No manifest found, using generate mode');
+    return 'generate';
+  }
+
+  /**
+   * Run all documentation generations in parallel.
+   * Each document spawns its own Claude Code CLI process via the SDK,
+   * giving each document its own context window for maximum quality.
    */
   private async runParallelGeneration(
     projectPath: string,
@@ -270,37 +369,39 @@ export class DocsService {
     codebaseContext: string,
     projectName: string,
     abortController: AbortController,
-    progress: Map<DocType, DocProgress>
+    progress: Map<DocType, DocProgress>,
+    mode: GenerationMode,
+    existingDocs: Map<DocType, string>,
+    gitChanges: GitChanges | null,
+    providerEnv: Record<string, string> | null
   ): Promise<void> {
     const docsDir = path.join(projectPath, 'docs');
 
-    // Run with limited concurrency (2 at a time) to avoid overwhelming the CLI
-    const CONCURRENCY_LIMIT = 2;
-    const results: PromiseSettledResult<boolean>[] = [];
+    // Create manifest for this generation run
+    const commitHash = await getCurrentCommitHash(projectPath);
+    const manifest = createManifest(model, mode, commitHash);
 
-    for (let i = 0; i < DOC_TYPES.length; i += CONCURRENCY_LIMIT) {
-      // Check if aborted before starting batch
-      if (abortController.signal.aborted) {
-        break;
-      }
+    // Run all doc generations in parallel - each spawns its own Claude Code CLI process
+    // This gives each document its own context window for maximum quality
+    const allPromises = DOC_TYPES.map((docTypeInfo) =>
+      this.generateSingleDoc(
+        projectPath,
+        docsDir,
+        docTypeInfo,
+        model,
+        codebaseContext,
+        projectName,
+        abortController,
+        progress,
+        mode,
+        existingDocs.get(docTypeInfo.type),
+        gitChanges,
+        manifest,
+        providerEnv
+      )
+    );
 
-      const batch = DOC_TYPES.slice(i, i + CONCURRENCY_LIMIT);
-      const batchPromises = batch.map((docTypeInfo) =>
-        this.generateSingleDoc(
-          projectPath,
-          docsDir,
-          docTypeInfo,
-          model,
-          codebaseContext,
-          projectName,
-          abortController,
-          progress
-        )
-      );
-
-      const batchResults = await Promise.allSettled(batchPromises);
-      results.push(...batchResults);
-    }
+    const results = await Promise.allSettled(allPromises);
 
     // Check if we were stopped
     const generation = this.runningGenerations.get(projectPath);
@@ -317,6 +418,17 @@ export class DocsService {
       }
     }
 
+    // Write the manifest after all generations complete
+    if (!wasStopped) {
+      try {
+        manifest.lastGeneratedAt = new Date().toISOString();
+        await writeDocsManifest(projectPath, manifest);
+        console.log('[DocsService] Wrote generation manifest');
+      } catch (error) {
+        console.error('[DocsService] Failed to write manifest:', error);
+      }
+    }
+
     // Clean up running state
     this.runningGenerations.delete(projectPath);
 
@@ -328,6 +440,7 @@ export class DocsService {
       errorCount,
       totalCount: DOC_TYPES.length,
       wasStopped,
+      mode,
     });
   }
 
@@ -342,7 +455,12 @@ export class DocsService {
     codebaseContext: string,
     projectName: string,
     abortController: AbortController,
-    progress: Map<DocType, DocProgress>
+    progress: Map<DocType, DocProgress>,
+    mode: GenerationMode,
+    existingContent: string | undefined,
+    gitChanges: GitChanges | null,
+    manifest: DocsGenerationManifest,
+    providerEnv: Record<string, string> | null
   ): Promise<boolean> {
     const { type: docType, displayName, filename } = docTypeInfo;
 
@@ -359,120 +477,189 @@ export class DocsService {
       displayName,
       status: 'generating',
       filename,
+      mode,
     });
 
-    try {
-      // Check if aborted before starting
-      if (abortController.signal.aborted) {
-        throw new Error('Generation stopped');
-      }
+    // Retry logic for transient CLI errors (e.g., when multiple processes start simultaneously)
+    const maxRetries = 2;
 
-      // Get provider for the model
-      const provider = ProviderFactory.getProviderForModel(model);
-
-      // Build prompts
-      const systemPrompt = getDocSystemPrompt(docType);
-      const userPrompt = buildDocUserPrompt(docType, codebaseContext, projectName);
-
-      // Execute options
-      const executeOptions: ExecuteOptions = {
-        prompt: userPrompt,
-        model,
-        cwd: projectPath,
-        systemPrompt,
-        maxTurns: 10,
-        allowedTools: ['Read', 'Glob', 'Grep'],
-        abortController,
-      };
-
-      console.log(`[DocsService] Starting generation for ${displayName} (${docType})`);
-      console.log(`[DocsService] Using model: ${model}, cwd: ${projectPath}`);
-      console.log(
-        `[DocsService] Prompt length: ${userPrompt.length}, System prompt length: ${systemPrompt.length}`
-      );
-
-      // Execute the query and collect output
-      let docContent = '';
-      const stream = provider.executeQuery(executeOptions);
-
-      for await (const msg of stream) {
-        // Check for abort during streaming
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Check if aborted before starting
         if (abortController.signal.aborted) {
           throw new Error('Generation stopped');
         }
 
-        if (msg.type === 'assistant' && msg.message?.content) {
-          for (const block of msg.message.content) {
-            if (block.type === 'text' && block.text) {
-              docContent += block.text;
-            }
+        // Get provider for the model
+        const provider = ProviderFactory.getProviderForModel(model);
+
+        // Build prompts based on mode
+        const systemPrompt = getDocSystemPrompt(docType, mode);
+        let userPrompt: string;
+
+        if (mode === 'regenerate' && existingContent && gitChanges) {
+          // Use regenerate prompt with existing content and git changes
+          userPrompt = buildRegenerateUserPrompt(
+            docType,
+            codebaseContext,
+            projectName,
+            existingContent,
+            gitChanges
+          );
+        } else {
+          // Use standard generate prompt
+          userPrompt = buildDocUserPrompt(docType, codebaseContext, projectName);
+        }
+
+        // Execute options - each doc gets its own CLI process with full tool access
+        // Task tool enables subagent spawning for deep codebase exploration
+        const executeOptions: ExecuteOptions = {
+          prompt: userPrompt,
+          model,
+          cwd: projectPath,
+          systemPrompt,
+          maxTurns: 30, // Increased to allow thorough exploration with subagents
+          allowedTools: ['Read', 'Glob', 'Grep', 'Task'],
+          abortController,
+          // Inject Z.AI environment for GLM models
+          ...(providerEnv ? { providerConfig: { env: providerEnv } } : {}),
+        };
+
+        if (attempt === 0) {
+          console.log(`[DocsService] Starting generation for ${displayName} (${docType})`);
+          console.log(`[DocsService] Using model: ${model}, cwd: ${projectPath}`);
+          console.log(
+            `[DocsService] Prompt length: ${userPrompt.length}, System prompt length: ${systemPrompt.length}`
+          );
+        } else {
+          console.log(
+            `[DocsService] Retrying generation for ${displayName} (attempt ${attempt + 1}/${maxRetries + 1})`
+          );
+        }
+
+        // Execute the query and collect output
+        let docContent = '';
+        const stream = provider.executeQuery(executeOptions);
+
+        for await (const msg of stream) {
+          // Check for abort during streaming
+          if (abortController.signal.aborted) {
+            throw new Error('Generation stopped');
           }
-        } else if (msg.type === 'result' && msg.subtype === 'success' && msg.result) {
-          // Final result
-          docContent = msg.result;
+
+          if (msg.type === 'assistant' && msg.message?.content) {
+            for (const block of msg.message.content) {
+              if (block.type === 'text' && block.text) {
+                docContent += block.text;
+                // Emit real-time output for the UI
+                this.emitDocsEvent('docs:doc-output', {
+                  projectPath,
+                  docType,
+                  content: block.text,
+                });
+              } else if (block.type === 'tool_use') {
+                // Emit tool call events for visibility
+                this.emitDocsEvent('docs:doc-tool', {
+                  projectPath,
+                  docType,
+                  tool: block.name,
+                  input: block.input as Record<string, unknown>,
+                });
+              }
+            }
+          } else if (msg.type === 'result' && msg.subtype === 'success' && msg.result) {
+            // Final result
+            docContent = msg.result;
+          }
         }
-      }
 
-      // Write the document to file
-      const outputPath = path.join(docsDir, filename);
-      await secureFs.writeFile(outputPath, docContent);
+        // Clean transitional text and write the document to file
+        const cleanedContent = cleanDocContent(docContent);
+        const outputPath = path.join(docsDir, filename);
+        await secureFs.writeFile(outputPath, cleanedContent);
 
-      console.log(`[DocsService] Completed generation for ${displayName}, saved to ${filename}`);
+        console.log(`[DocsService] Completed generation for ${displayName}, saved to ${filename}`);
 
-      // Update progress to completed
-      if (docProgress) {
-        docProgress.status = 'completed';
-        docProgress.completedAt = new Date().toISOString();
-      }
+        // Update manifest with this doc's status
+        updateManifestDoc(manifest, docType, true);
 
-      this.emitDocsEvent('docs:doc-completed', {
-        projectPath,
-        docType,
-        displayName,
-        filename,
-        completedAt: new Date().toISOString(),
-      });
-
-      return true;
-    } catch (error) {
-      const errorInfo = classifyError(error);
-
-      // Check if this was an abort/stop
-      if (errorInfo.isAbort || abortController.signal.aborted) {
-        console.log(`[DocsService] Generation stopped for ${displayName}`);
+        // Update progress to completed
         if (docProgress) {
-          docProgress.status = 'stopped';
+          docProgress.status = 'completed';
+          docProgress.completedAt = new Date().toISOString();
         }
+
+        this.emitDocsEvent('docs:doc-completed', {
+          projectPath,
+          docType,
+          displayName,
+          filename,
+          completedAt: new Date().toISOString(),
+          mode,
+        });
+
+        return true;
+      } catch (error) {
+        const errorInfo = classifyError(error);
+
+        // Check if this was an abort/stop - don't retry
+        if (errorInfo.isAbort || abortController.signal.aborted) {
+          console.log(`[DocsService] Generation stopped for ${displayName}`);
+          if (docProgress) {
+            docProgress.status = 'stopped';
+          }
+          this.emitDocsEvent('docs:doc-error', {
+            projectPath,
+            docType,
+            displayName,
+            filename,
+            error: 'Generation stopped',
+            stopped: true,
+          });
+          return false;
+        }
+
+        // Check if this is a transient CLI error that we should retry
+        const isTransientCLIError =
+          (error as Error).name === 'ClaudeCLIError' ||
+          ((error as Error).message?.includes('CLI returned a message') ?? false);
+
+        if (isTransientCLIError && attempt < maxRetries) {
+          console.log(
+            `[DocsService] Transient CLI error for ${displayName}, will retry after delay...`
+          );
+          // Wait a bit before retrying (exponential backoff)
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
+        }
+
+        // Final failure - log and emit error
+        console.error(`[DocsService] Generation failed for ${displayName}:`, error);
+
+        // Update manifest with this doc's failure
+        updateManifestDoc(manifest, docType, false);
+
+        // Update progress to error
+        if (docProgress) {
+          docProgress.status = 'error';
+          docProgress.error = errorInfo.message;
+        }
+
         this.emitDocsEvent('docs:doc-error', {
           projectPath,
           docType,
           displayName,
           filename,
-          error: 'Generation stopped',
-          stopped: true,
+          error: errorInfo.message,
+          stopped: false,
         });
+
         return false;
       }
-
-      console.error(`[DocsService] Generation failed for ${displayName}:`, error);
-
-      // Update progress to error
-      if (docProgress) {
-        docProgress.status = 'error';
-        docProgress.error = errorInfo.message;
-      }
-
-      this.emitDocsEvent('docs:doc-error', {
-        projectPath,
-        docType,
-        displayName,
-        filename,
-        error: errorInfo.message,
-        stopped: false,
-      });
-
-      return false;
     }
+
+    // Should not reach here, but handle just in case
+    return false;
   }
 
   /**
@@ -597,7 +784,9 @@ export class DocsService {
       | 'docs:doc-progress'
       | 'docs:doc-completed'
       | 'docs:doc-error'
-      | 'docs:generation-completed',
+      | 'docs:generation-completed'
+      | 'docs:doc-output'
+      | 'docs:doc-tool',
     payload: unknown
   ): void {
     // Cast to EventType since these types are defined in libs/types/src/event.ts

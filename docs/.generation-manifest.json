@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "lastGeneratedAt": "2025-12-30T01:48:15.826Z",
+  "lastCommitHash": "90fb8eae0478f6dd2bbda688e3c373968e15ecff",
+  "model": "GLM-4.7",
+  "mode": "generate",
+  "docs": {
+    "modules-components": {
+      "generatedAt": "2025-12-30T01:48:14.755Z",
+      "status": "error"
+    },
+    "architecture": {
+      "generatedAt": "2025-12-30T01:48:14.755Z",
+      "status": "error"
+    },
+    "directory-structure": {
+      "generatedAt": "2025-12-30T01:48:14.770Z",
+      "status": "error"
+    },
+    "api-reference": {
+      "generatedAt": "2025-12-30T01:48:15.111Z",
+      "status": "error"
+    },
+    "setup-development": {
+      "generatedAt": "2025-12-30T01:48:15.112Z",
+      "status": "error"
+    },
+    "project-overview": {
+      "generatedAt": "2025-12-30T01:48:15.826Z",
+      "status": "error"
+    }
+  }
+}

@@ -153,6 +153,7 @@ export interface KeyboardShortcuts {
   settings: string;
   profiles: string;
   terminal: string;
+  docs: string;
 
   // UI shortcuts
   toggleSidebar: string;
@@ -180,11 +181,12 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   // Navigation
   board: 'K',
   agent: 'A',
-  spec: 'D',
+  spec: 'F',
   context: 'C',
   settings: 'S',
   profiles: 'M',
   terminal: 'T',
+  docs: 'D',
 
   // UI
   toggleSidebar: '`',
@@ -305,6 +307,23 @@ export interface DocProgress {
   status: 'pending' | 'running' | 'completed' | 'error';
   message?: string; // Optional message (error details or progress info)
 }
+
+// Tool call for documentation generation logs
+export interface DocToolCall {
+  id: string;
+  tool: string;
+  input?: Record<string, unknown>;
+  timestamp: number;
+}
+
+// Logs for a single doc type during generation
+export interface DocLogs {
+  toolCalls: DocToolCall[];
+  output: string;
+}
+
+// Logs for all doc types in a project
+export type DocsLogsByDocType = Record<string, DocLogs>;
 
 // File tree node for project analysis
 export interface FileTreeNode {
@@ -556,6 +575,7 @@ export interface AppState {
   // Documentation Generation State (per-project)
   docsGeneratingByProject: Record<string, boolean>; // projectPath -> isGenerating
   docsProgressByProject: Record<string, DocProgress[]>; // projectPath -> array of doc progress
+  docsLogsByProject: Record<string, DocsLogsByDocType>; // projectPath -> docType -> logs
 }
 
 // Claude Usage interface matching the server response
@@ -902,6 +922,14 @@ export interface AppActions {
     message?: string
   ) => void;
   clearDocsProgress: (projectPath: string) => void;
+  addDocToolCall: (
+    projectPath: string,
+    docType: string,
+    tool: string,
+    input?: Record<string, unknown>
+  ) => void;
+  appendDocOutput: (projectPath: string, docType: string, content: string) => void;
+  clearDocsLogs: (projectPath: string) => void;
 
   // Reset
   reset: () => void;
@@ -1020,6 +1048,7 @@ const initialState: AppState = {
   claudeUsageLastUpdated: null,
   docsGeneratingByProject: {},
   docsProgressByProject: {},
+  docsLogsByProject: {},
 };
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -2739,6 +2768,57 @@ export const useAppStore = create<AppState & AppActions>()(
           docsGeneratingByProject: restGenerating,
           docsProgressByProject: restProgress,
         });
+      },
+
+      addDocToolCall: (projectPath, docType, tool, input) => {
+        const current = get().docsLogsByProject;
+        const projectLogs = current[projectPath] || {};
+        const docLogs = projectLogs[docType] || { toolCalls: [], output: '' };
+
+        const newToolCall = {
+          id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          tool,
+          input,
+          timestamp: Date.now(),
+        };
+
+        set({
+          docsLogsByProject: {
+            ...current,
+            [projectPath]: {
+              ...projectLogs,
+              [docType]: {
+                ...docLogs,
+                toolCalls: [...docLogs.toolCalls, newToolCall],
+              },
+            },
+          },
+        });
+      },
+
+      appendDocOutput: (projectPath, docType, content) => {
+        const current = get().docsLogsByProject;
+        const projectLogs = current[projectPath] || {};
+        const docLogs = projectLogs[docType] || { toolCalls: [], output: '' };
+
+        set({
+          docsLogsByProject: {
+            ...current,
+            [projectPath]: {
+              ...projectLogs,
+              [docType]: {
+                ...docLogs,
+                output: docLogs.output + content,
+              },
+            },
+          },
+        });
+      },
+
+      clearDocsLogs: (projectPath) => {
+        const current = get().docsLogsByProject;
+        const { [projectPath]: _logs, ...rest } = current;
+        set({ docsLogsByProject: rest });
       },
 
       // Reset

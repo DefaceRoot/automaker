@@ -1,11 +1,64 @@
+import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { cn } from '@/lib/utils';
+import { Copy, Check } from 'lucide-react';
 
 interface DocMarkdownProps {
   children: string;
   className?: string;
+}
+
+/**
+ * Code block component with copy functionality
+ */
+function CodeBlock({ children, className, ...props }: React.HTMLProps<HTMLElement>) {
+  const [copied, setCopied] = useState(false);
+  const isCodeBlock =
+    className?.includes('language-') || (typeof children === 'string' && children.includes('\n'));
+
+  const handleCopy = useCallback(async () => {
+    if (typeof children === 'string') {
+      try {
+        await navigator.clipboard.writeText(children);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (error) {
+        console.error('Failed to copy:', error);
+      }
+    }
+  }, [children]);
+
+  // For inline code, just render normally
+  if (!isCodeBlock) {
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  }
+
+  // For code blocks, add copy button
+  return (
+    <div className="relative group">
+      <code className={className} {...props}>
+        {children}
+      </code>
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 p-1.5 rounded-md bg-muted/80 hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+        title="Copy code"
+        type="button"
+      >
+        {copied ? (
+          <Check className="w-3.5 h-3.5 text-green-500" />
+        ) : (
+          <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+        )}
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -15,6 +68,7 @@ interface DocMarkdownProps {
  * - Comprehensive table styling with borders
  * - Enhanced code block styling with better contrast
  * - Better spacing for documentation-style content
+ * - Copy button on code blocks
  * Theme-aware styling that adapts to all predefined themes
  */
 export function DocMarkdown({ children, className }: DocMarkdownProps) {
@@ -39,7 +93,7 @@ export function DocMarkdown({ children, className }: DocMarkdownProps) {
         // Inline code
         '[&_code]:text-chart-2 [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_code]:font-mono',
         // Code blocks - enhanced for documentation
-        '[&_pre]:bg-card [&_pre]:border [&_pre]:border-border [&_pre]:rounded-lg [&_pre]:my-4 [&_pre]:p-4 [&_pre]:overflow-x-auto [&_pre]:shadow-sm',
+        '[&_pre]:bg-card [&_pre]:border [&_pre]:border-border [&_pre]:rounded-lg [&_pre]:my-4 [&_pre]:p-4 [&_pre]:overflow-x-auto [&_pre]:shadow-sm [&_pre]:relative',
         '[&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-foreground-secondary [&_pre_code]:text-[13px] [&_pre_code]:leading-6',
         // Strong/Bold
         '[&_strong]:text-foreground [&_strong]:font-semibold',
@@ -70,7 +124,14 @@ export function DocMarkdown({ children, className }: DocMarkdownProps) {
         className
       )}
     >
-      <ReactMarkdown rehypePlugins={[rehypeRaw, rehypeSanitize]}>{children}</ReactMarkdown>
+      <ReactMarkdown
+        rehypePlugins={[rehypeRaw, rehypeSanitize]}
+        components={{
+          code: CodeBlock as any,
+        }}
+      >
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }

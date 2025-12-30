@@ -75,6 +75,21 @@ export function ClaudeUsagePopover() {
     }
   }, [isStale, fetchUsage]);
 
+  // Subscribe to real-time usage updates via WebSocket
+  useEffect(() => {
+    const api = getElectronAPI();
+    if (!api.claude?.onUsageUpdate) return;
+
+    const unsubscribe = api.claude.onUsageUpdate((usage) => {
+      // Real-time update received - update store
+      setClaudeUsage(usage);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [setClaudeUsage]);
+
   useEffect(() => {
     // Initial fetch when opened
     if (open) {

@@ -76,6 +76,13 @@ export type DocType =
 
 export type DocStatus = 'pending' | 'generating' | 'completed' | 'error' | 'stopped';
 
+/**
+ * Generation mode for documentation
+ * - 'generate': Full documentation generation from scratch
+ * - 'regenerate': Incremental updates based on git changes
+ */
+export type GenerationMode = 'generate' | 'regenerate';
+
 export interface DocProgress {
   docType: DocType;
   displayName: string;
@@ -109,6 +116,7 @@ export type DocsEvent =
       type: 'docs:generation-started';
       projectPath: string;
       startedAt: string;
+      mode: GenerationMode;
       docTypes: Array<{ type: DocType; displayName: string; filename: string }>;
     }
   | {
@@ -118,6 +126,7 @@ export type DocsEvent =
       displayName: string;
       status: DocStatus;
       filename: string;
+      mode?: GenerationMode;
     }
   | {
       type: 'docs:doc-completed';
@@ -126,6 +135,7 @@ export type DocsEvent =
       displayName: string;
       filename: string;
       completedAt: string;
+      mode?: GenerationMode;
     }
   | {
       type: 'docs:doc-error';
@@ -144,10 +154,34 @@ export type DocsEvent =
       errorCount: number;
       totalCount: number;
       wasStopped: boolean;
+      mode?: GenerationMode;
+    }
+  | {
+      type: 'docs:doc-output';
+      projectPath: string;
+      docType: DocType;
+      content: string;
+    }
+  | {
+      type: 'docs:doc-tool';
+      projectPath: string;
+      docType: DocType;
+      tool: string;
+      input?: Record<string, unknown>;
     };
 
 export interface DocsAPI {
-  generate: (projectPath: string, model?: string) => Promise<{ success: boolean; error?: string }>;
+  /**
+   * Generate documentation for a project
+   * @param projectPath - The project directory path
+   * @param model - Optional model override
+   * @param mode - 'generate' for full generation, 'regenerate' for incremental updates
+   */
+  generate: (
+    projectPath: string,
+    model?: string,
+    mode?: GenerationMode
+  ) => Promise<{ success: boolean; mode?: GenerationMode; error?: string }>;
   stop: (projectPath: string) => Promise<{ success: boolean; stopped?: boolean; error?: string }>;
   list: (projectPath: string) => Promise<{ success: boolean; docs?: DocInfo[]; error?: string }>;
   getContent: (
@@ -198,6 +232,20 @@ export class HttpApiClient implements ElectronAPI {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+
+          // Check if this is a docs-specific event and route to 'docs:event' callbacks
+          // Server emits specific types like 'docs:generation-started', 'docs:doc-progress', etc.
+          // But UI subscribes to unified 'docs:event' type
+          if (data.type && data.type.startsWith('docs:')) {
+            const docsCallbacks = this.eventCallbacks.get('docs:event');
+            if (docsCallbacks) {
+              // Wrap the payload with the type so the handler knows what kind of event it is
+              const docsEvent = { type: data.type, ...data.payload };
+              docsCallbacks.forEach((cb) => cb(docsEvent));
+            }
+            return; // Don't process further for docs events
+          }
+
           const callbacks = this.eventCallbacks.get(data.type);
           if (callbacks) {
             callbacks.forEach((cb) => cb(data.payload));
@@ -860,8 +908,8 @@ export class HttpApiClient implements ElectronAPI {
 
   // Docs API
   docs: DocsAPI = {
-    generate: (projectPath: string, model?: string) =>
-      this.post('/api/docs/generate', { projectPath, model }),
+    generate: (projectPath: string, model?: string, mode?: GenerationMode) =>
+      this.post('/api/docs/generate', { projectPath, model, mode }),
     stop: (projectPath: string) => this.post('/api/docs/stop', { projectPath }),
     list: (projectPath: string) => this.post('/api/docs/list', { projectPath }),
     getContent: (projectPath: string, docType: DocType) =>
@@ -1263,6 +1311,9 @@ export class HttpApiClient implements ElectronAPI {
   // Claude API
   claude = {
     getUsage: (): Promise<ClaudeUsageResponse> => this.get('/api/claude/usage'),
+    onUsageUpdate: (callback: (usage: ClaudeUsageResponse) => void): (() => void) => {
+      return this.subscribeToEvent('claude:usage-update', callback as EventCallback);
+    },
   };
 
   // Context API

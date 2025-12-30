@@ -5,9 +5,7 @@
 import type { Request, Response } from 'express';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
-import * as secureFs from '../../../lib/secure-fs.js';
-import { getErrorMessage, logError } from '../common.js';
+import { getErrorMessage, logError, resolveWorktreePath } from '../common.js';
 import { generateSyntheticDiffForNewFile } from '../../common.js';
 
 const execAsync = promisify(exec);
@@ -29,15 +27,17 @@ export function createFileDiffHandler() {
         return;
       }
 
-      // Git worktrees are stored in project directory
-      const worktreePath = path.join(projectPath, '.worktrees', featureId);
+      // Resolve worktree path from feature's branch name
+      const worktreeInfo = await resolveWorktreePath(projectPath, featureId);
+      if (!worktreeInfo) {
+        res.json({ success: true, diff: '', filePath });
+        return;
+      }
 
       try {
-        await secureFs.access(worktreePath);
-
         // First check if the file is untracked
         const { stdout: status } = await execAsync(`git status --porcelain -- "${filePath}"`, {
-          cwd: worktreePath,
+          cwd: worktreeInfo.path,
         });
 
         const isUntracked = status.trim().startsWith('??');
@@ -45,11 +45,11 @@ export function createFileDiffHandler() {
         let diff: string;
         if (isUntracked) {
           // Generate synthetic diff for untracked file
-          diff = await generateSyntheticDiffForNewFile(worktreePath, filePath);
+          diff = await generateSyntheticDiffForNewFile(worktreeInfo.path, filePath);
         } else {
           // Use regular git diff for tracked files
           const result = await execAsync(`git diff HEAD -- "${filePath}"`, {
-            cwd: worktreePath,
+            cwd: worktreeInfo.path,
             maxBuffer: 10 * 1024 * 1024,
           });
           diff = result.stdout;

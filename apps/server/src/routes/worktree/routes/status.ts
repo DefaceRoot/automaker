@@ -5,9 +5,7 @@
 import type { Request, Response } from 'express';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
-import * as secureFs from '../../../lib/secure-fs.js';
-import { getErrorMessage, logError } from '../common.js';
+import { getErrorMessage, logError, resolveWorktreePath } from '../common.js';
 
 const execAsync = promisify(exec);
 
@@ -27,23 +25,32 @@ export function createStatusHandler() {
         return;
       }
 
-      // Git worktrees are stored in project directory
-      const worktreePath = path.join(projectPath, '.worktrees', featureId);
+      // Resolve worktree path from feature's branch name
+      const worktreeInfo = await resolveWorktreePath(projectPath, featureId);
+      if (!worktreeInfo) {
+        res.json({
+          success: true,
+          modifiedFiles: 0,
+          files: [],
+          diffStat: '',
+          recentCommits: [],
+        });
+        return;
+      }
 
       try {
-        await secureFs.access(worktreePath);
         const { stdout: status } = await execAsync('git status --porcelain', {
-          cwd: worktreePath,
+          cwd: worktreeInfo.path,
         });
         const files = status
           .split('\n')
           .filter(Boolean)
           .map((line) => line.slice(3));
         const { stdout: diffStat } = await execAsync('git diff --stat', {
-          cwd: worktreePath,
+          cwd: worktreeInfo.path,
         });
         const { stdout: logOutput } = await execAsync('git log --oneline -5 --format="%h %s"', {
-          cwd: worktreePath,
+          cwd: worktreeInfo.path,
         });
 
         res.json({
