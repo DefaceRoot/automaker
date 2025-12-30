@@ -329,17 +329,14 @@ export class WorktreeLifecycleService {
     }
 
     // Try to generate title using AI
+    // Note: generateTitleFromDescription handles errors internally and returns null on failure
     if (feature.description && feature.description.trim()) {
-      try {
-        const generatedTitle = await generateTitleFromDescription(feature.description);
-        if (generatedTitle) {
-          return generatedTitle;
-        }
-      } catch (error) {
-        logger.warn('Failed to generate title, falling back to description', error);
+      const generatedTitle = await generateTitleFromDescription(feature.description);
+      if (generatedTitle) {
+        return generatedTitle;
       }
 
-      // Fallback: truncated description
+      // Fallback: truncated description (AI generation returned null)
       return feature.description.trim().substring(0, 100);
     }
 
