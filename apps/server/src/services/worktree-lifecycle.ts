@@ -80,18 +80,26 @@ export class WorktreeLifecycleService {
     const { projectPath, feature, baseBranch, setupScript } = options;
 
     logger.info(`Creating worktree for feature ${feature.id}`);
+    logger.info(`Feature worktreeCategory from request: ${feature.worktreeCategory}`);
 
     // Determine the worktree category from feature
     const category = this.getWorktreeCategory(feature);
-    logger.info(`Using category: ${category}`);
+    logger.info(`Using category (after getWorktreeCategory): ${category}`);
 
     // Generate a title for the worktree branch name
     const title = this.generateWorktreeTitle(feature);
     logger.info(`Generated title: ${title}`);
 
-    // Check if feature already has a branch assigned
-    if (feature.branchName) {
-      // Try to find existing worktree for this branch
+    // If worktreeCategory is explicitly set, create a NEW categorized worktree
+    // Don't reuse existing worktree - user explicitly requested a new one
+    if (feature.worktreeCategory) {
+      logger.info(
+        `worktreeCategory is set (${feature.worktreeCategory}), creating new categorized worktree`
+      );
+      // Skip the "reuse existing" logic - fall through to create new worktree
+    } else if (feature.branchName) {
+      // Only reuse existing worktree if worktreeCategory is NOT set
+      // This handles resuming tasks or manually assigned branches
       const existingWorktree = await this.worktreeManager.findWorktreeForBranch(
         projectPath,
         feature.branchName

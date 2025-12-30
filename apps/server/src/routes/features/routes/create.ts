@@ -36,13 +36,23 @@ export function createCreateHandler(
         return;
       }
 
+      logger.info(
+        `[features/create] Creating feature with worktreeCategory: ${feature.worktreeCategory}`
+      );
+
       // Create the feature first
       const created = await featureLoader.create(projectPath, feature);
+      logger.info(
+        `[features/create] Feature created: ${created.id}, worktreeCategory: ${created.worktreeCategory}`
+      );
 
       // Check if worktrees are enabled in global settings
       let worktreeCreated = false;
       if (settingsService) {
         const globalSettings = await settingsService.getGlobalSettings();
+        logger.info(
+          `[features/create] Settings loaded - useWorktrees: ${globalSettings.useWorktrees}`
+        );
         if (globalSettings.useWorktrees) {
           logger.info(`Worktrees enabled, creating worktree for feature ${created.id}`);
 

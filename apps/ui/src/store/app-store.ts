@@ -761,7 +761,7 @@ export interface AppActions {
   setEnableDependencyBlocking: (enabled: boolean) => void;
 
   // Worktree Settings actions
-  setUseWorktrees: (enabled: boolean) => void;
+  setUseWorktrees: (enabled: boolean) => Promise<void>;
   setCurrentWorktree: (projectPath: string, worktreePath: string | null, branch: string) => void;
   setWorktrees: (
     projectPath: string,
@@ -1587,7 +1587,12 @@ export const useAppStore = create<AppState & AppActions>()(
       setEnableDependencyBlocking: (enabled) => set({ enableDependencyBlocking: enabled }),
 
       // Worktree Settings actions
-      setUseWorktrees: (enabled) => set({ useWorktrees: enabled }),
+      setUseWorktrees: async (enabled) => {
+        set({ useWorktrees: enabled });
+        // Sync to server settings file so worktree creation works
+        const { syncSettingsToServer } = await import('@/hooks/use-settings-migration');
+        await syncSettingsToServer();
+      },
 
       setCurrentWorktree: (projectPath, worktreePath, branch) => {
         const current = get().currentWorktreeByProject;
