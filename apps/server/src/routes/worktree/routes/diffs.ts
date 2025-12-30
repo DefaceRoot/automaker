@@ -28,13 +28,19 @@ export function createDiffsHandler() {
       // Use worktree path if found, otherwise fallback to main project path
       const targetPath = worktreeInfo?.path ?? projectPath;
 
+      // Get trackedFiles from the feature to filter diffs to task-specific changes
+      const trackedFiles = worktreeInfo?.trackedFiles;
+
       try {
-        const result = await getGitRepositoryDiffs(targetPath);
+        const result = await getGitRepositoryDiffs(targetPath, trackedFiles);
         res.json({
           success: true,
           diff: result.diff,
           files: result.files,
           hasChanges: result.hasChanges,
+          // Include filtering metadata for frontend empty state handling
+          isFiltered: !!(trackedFiles && trackedFiles.length > 0),
+          trackedFileCount: trackedFiles?.length ?? 0,
         });
       } catch (innerError) {
         logError(innerError, 'Get diffs failed');

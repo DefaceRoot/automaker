@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher } from 'chokidar';
 import type { EventEmitter } from '../lib/events.js';
 import { ClaudeUsage } from '../routes/claude/types.js';
 
@@ -36,7 +36,7 @@ interface UsageEntry {
  */
 export class ClaudeUsageService {
   private dataDir: string | null = null;
-  private watcher: chokidar.FSWatcher | null = null;
+  private watcher: FSWatcher | null = null;
   private cachedUsage: ClaudeUsage | null = null;
   private cacheTimestamp: number = 0;
   private readonly CACHE_TTL_MS = 30000; // 30 seconds cache
@@ -102,19 +102,19 @@ export class ClaudeUsageService {
       });
 
       // Watch for changes to JSONL files
-      this.watcher.on('change', (filePath) => {
+      this.watcher.on('change', (filePath: string) => {
         if (filePath.endsWith('.jsonl')) {
           this.handleFileChange();
         }
       });
 
-      this.watcher.on('add', (filePath) => {
+      this.watcher.on('add', (filePath: string) => {
         if (filePath.endsWith('.jsonl')) {
           this.handleFileChange();
         }
       });
 
-      this.watcher.on('error', (error) => {
+      this.watcher.on('error', (error: unknown) => {
         console.error('[ClaudeUsageService] File watcher error:', error);
       });
 

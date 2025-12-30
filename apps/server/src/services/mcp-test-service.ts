@@ -8,8 +8,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpServerConfig, StdioMcpConfig, HttpMcpConfig } from '@automaker/types';
 import { createLogger } from '@automaker/utils';
+
+/** Type for HTTP-based MCP transports */
+type HttpMcpTransport = StreamableHTTPClientTransport | SSEClientTransport;
 
 const logger = createLogger('mcp-test-service');
 
@@ -68,7 +72,7 @@ export async function testMcpServer(
   logger.info(`Testing MCP server: ${config.name} (${config.id})`);
 
   let client: Client | null = null;
-  let transport: StdioClientTransport | SSEClientTransport | null = null;
+  let transport: StdioClientTransport | HttpMcpTransport | null = null;
 
   try {
     // Create transport based on config type
@@ -83,35 +87,100 @@ export async function testMcpServer(
         args: stdioConfig.args,
         env: stdioConfig.env,
       });
-    } else {
-      const httpConfig = config.transport as HttpMcpConfig;
-      logger.debug(`Creating SSE transport: ${httpConfig.url}`);
 
-      transport = new SSEClientTransport(new URL(httpConfig.url), {
-        requestInit: {
-          headers: httpConfig.headers,
+      // Create client
+      client = new Client(
+        {
+          name: 'automaker-mcp-tester',
+          version: '1.0.0',
         },
+        {
+          capabilities: {},
+        }
+      );
+
+      // Connect with timeout
+      const connectPromise = client.connect(transport);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
       });
-    }
 
-    // Create client with timeout
-    client = new Client(
-      {
-        name: 'automaker-mcp-tester',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {},
+      await Promise.race([connectPromise, timeoutPromise]);
+    } else {
+      // For HTTP transport, try Streamable HTTP first, then fall back to SSE
+      const httpConfig = config.transport as HttpMcpConfig;
+      const url = new URL(httpConfig.url);
+      const requestInit = httpConfig.headers ? { headers: httpConfig.headers } : undefined;
+
+      // Create client first
+      client = new Client(
+        {
+          name: 'automaker-mcp-tester',
+          version: '1.0.0',
+        },
+        {
+          capabilities: {},
+        }
+      );
+
+      // Try Streamable HTTP transport first (modern servers)
+      logger.debug(`Trying Streamable HTTP transport: ${httpConfig.url}`);
+      transport = new StreamableHTTPClientTransport(url, { requestInit });
+
+      try {
+        const connectPromise = client.connect(transport);
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
+        });
+
+        await Promise.race([connectPromise, timeoutPromise]);
+        logger.info(`Connected via Streamable HTTP transport: ${config.name}`);
+      } catch (streamableError) {
+        // Check if it's a 4xx error indicating the server doesn't support Streamable HTTP
+        const errorMessage =
+          streamableError instanceof Error ? streamableError.message : String(streamableError);
+        const is4xxError =
+          errorMessage.includes('405') ||
+          errorMessage.includes('404') ||
+          errorMessage.includes('400') ||
+          errorMessage.includes('4');
+
+        if (is4xxError || errorMessage.includes('SSE') || errorMessage.includes('sse')) {
+          // Try to clean up the failed transport
+          try {
+            await client.close();
+          } catch {
+            // Ignore cleanup errors
+          }
+
+          // Fall back to SSE transport (legacy servers)
+          logger.debug(`Streamable HTTP failed, falling back to SSE transport: ${httpConfig.url}`);
+          transport = new SSEClientTransport(url, { requestInit });
+
+          // Create a new client for SSE
+          client = new Client(
+            {
+              name: 'automaker-mcp-tester',
+              version: '1.0.0',
+            },
+            {
+              capabilities: {},
+            }
+          );
+
+          const sseConnectPromise = client.connect(transport);
+          const sseTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
+          });
+
+          await Promise.race([sseConnectPromise, sseTimeoutPromise]);
+          logger.info(`Connected via SSE transport (fallback): ${config.name}`);
+        } else {
+          // Re-throw if it's not a transport compatibility issue
+          throw streamableError;
+        }
       }
-    );
-
-    // Connect with timeout
-    const connectPromise = client.connect(transport);
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
-    });
-
-    await Promise.race([connectPromise, timeoutPromise]);
+    }
 
     logger.info(`Connected to MCP server: ${config.name}`);
 

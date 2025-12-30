@@ -41,6 +41,7 @@ export function createCreateHandler(
 
       // Check if worktrees are enabled in global settings
       let worktreeCreated = false;
+      let worktreeError: string | undefined;
       if (settingsService) {
         try {
           const globalSettings = await settingsService.getGlobalSettings();
@@ -51,7 +52,6 @@ export function createCreateHandler(
             const worktreeResult = await worktreeLifecycleService.createWorktreeForTask({
               projectPath,
               feature: created,
-              baseBranch: globalSettings.baseBranch || undefined,
             });
 
             logger.info(
@@ -62,9 +62,11 @@ export function createCreateHandler(
             created.branchName = worktreeResult.branchName;
             worktreeCreated = true;
           }
-        } catch (worktreeError) {
+        } catch (error) {
           // Log but don't fail - worktree creation is optional
-          logger.error('Failed to create worktree for feature:', worktreeError);
+          // Surface the error in the response so the UI can show a warning
+          worktreeError = getErrorMessage(error);
+          logger.error('Failed to create worktree for feature:', error);
         }
       }
 
@@ -72,6 +74,7 @@ export function createCreateHandler(
         success: true,
         feature: created,
         worktreeCreated,
+        worktreeError,
       });
     } catch (error) {
       logError(error, 'Create feature failed');

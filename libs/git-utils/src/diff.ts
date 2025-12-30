@@ -242,18 +242,54 @@ export async function generateDiffsForNonGitDirectory(
 }
 
 /**
+ * Normalize path separators to forward slashes for cross-platform consistency.
+ * Git uses forward slashes even on Windows.
+ */
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
+/**
  * Get git repository diffs for a given path
  * Handles both git repos and non-git directories
+ *
+ * @param repoPath - The path to the repository
+ * @param filterPaths - Optional array of file paths to filter diffs to.
+ *                      When provided and non-empty, only diffs for these files are returned.
+ *                      When undefined or empty, all diffs are returned (backward compatible).
  */
 export async function getGitRepositoryDiffs(
-  repoPath: string
+  repoPath: string,
+  filterPaths?: string[]
 ): Promise<{ diff: string; files: FileStatus[]; hasChanges: boolean }> {
+  // Normalize filter paths for consistent comparison (git uses forward slashes)
+  const normalizedFilterPaths = filterPaths?.map(normalizePath);
+  const hasFilter = normalizedFilterPaths && normalizedFilterPaths.length > 0;
+
   // Check if it's a git repository
   const isRepo = await isGitRepo(repoPath);
 
   if (!isRepo) {
     // Not a git repo - list all files and treat them as new
     const result = await generateDiffsForNonGitDirectory(repoPath);
+
+    // Filter results if filterPaths provided
+    if (hasFilter) {
+      const filterSet = new Set(normalizedFilterPaths);
+      const filteredFiles = result.files.filter((f) => filterSet.has(normalizePath(f.path)));
+
+      // Regenerate diffs for filtered files only
+      const syntheticDiffs = await Promise.all(
+        filteredFiles.map((f) => generateSyntheticDiffForNewFile(repoPath, f.path))
+      );
+
+      return {
+        diff: syntheticDiffs.join(''),
+        files: filteredFiles,
+        hasChanges: filteredFiles.length > 0,
+      };
+    }
+
     return {
       diff: result.diff,
       files: result.files,
@@ -261,8 +297,16 @@ export async function getGitRepositoryDiffs(
     };
   }
 
+  // Build git diff command - filter to specific paths if provided
+  let diffCommand = 'git diff HEAD';
+  if (hasFilter) {
+    // Escape file paths for shell safety and add them to the command
+    const escapedPaths = normalizedFilterPaths.map((f) => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+    diffCommand = `git diff HEAD -- ${escapedPaths}`;
+  }
+
   // Get git diff and status
-  const { stdout: diff } = await execAsync('git diff HEAD', {
+  const { stdout: diff } = await execAsync(diffCommand, {
     cwd: repoPath,
     maxBuffer: 10 * 1024 * 1024,
   });
@@ -270,9 +314,15 @@ export async function getGitRepositoryDiffs(
     cwd: repoPath,
   });
 
-  const files = parseGitStatus(status);
+  let files = parseGitStatus(status);
 
-  // Generate synthetic diffs for untracked (new) files
+  // Filter files if filterPaths provided
+  if (hasFilter) {
+    const filterSet = new Set(normalizedFilterPaths);
+    files = files.filter((f) => filterSet.has(normalizePath(f.path)));
+  }
+
+  // Generate synthetic diffs for untracked (new) files (already filtered if applicable)
   const combinedDiff = await appendUntrackedFileDiffs(repoPath, diff, files);
 
   return {

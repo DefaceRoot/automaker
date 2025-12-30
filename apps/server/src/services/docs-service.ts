@@ -383,22 +383,39 @@ export class DocsService {
 
     // Run all doc generations in parallel - each spawns its own Claude Code CLI process
     // This gives each document its own context window for maximum quality
-    const allPromises = DOC_TYPES.map((docTypeInfo) =>
-      this.generateSingleDoc(
-        projectPath,
-        docsDir,
-        docTypeInfo,
-        model,
-        codebaseContext,
-        projectName,
-        abortController,
-        progress,
-        mode,
-        existingDocs.get(docTypeInfo.type),
-        gitChanges,
-        manifest,
-        providerEnv
-      )
+    // Add a small stagger delay between starts to avoid overwhelming the API
+    const STAGGER_DELAY_MS = 500; // 500ms between each doc start
+    const allPromises = DOC_TYPES.map(
+      (docTypeInfo, index) =>
+        // Stagger the start of each generation to avoid rate limiting
+        new Promise<boolean>((resolve) => {
+          setTimeout(async () => {
+            try {
+              const result = await this.generateSingleDoc(
+                projectPath,
+                docsDir,
+                docTypeInfo,
+                model,
+                codebaseContext,
+                projectName,
+                abortController,
+                progress,
+                mode,
+                existingDocs.get(docTypeInfo.type),
+                gitChanges,
+                manifest,
+                providerEnv
+              );
+              resolve(result);
+            } catch (error) {
+              console.error(
+                `[DocsService] Unexpected error generating ${docTypeInfo.displayName}:`,
+                error
+              );
+              resolve(false);
+            }
+          }, index * STAGGER_DELAY_MS);
+        })
     );
 
     const results = await Promise.allSettled(allPromises);
@@ -539,9 +556,15 @@ export class DocsService {
 
         // Execute the query and collect output
         let docContent = '';
+        let receivedSuccessResult = false;
+        let messageCount = 0;
+        let textBlockCount = 0;
+        let resultMessages: Array<{ subtype?: string; hasResult: boolean }> = [];
         const stream = provider.executeQuery(executeOptions);
 
         for await (const msg of stream) {
+          messageCount++;
+
           // Check for abort during streaming
           if (abortController.signal.aborted) {
             throw new Error('Generation stopped');
@@ -550,6 +573,7 @@ export class DocsService {
           if (msg.type === 'assistant' && msg.message?.content) {
             for (const block of msg.message.content) {
               if (block.type === 'text' && block.text) {
+                textBlockCount++;
                 docContent += block.text;
                 // Emit real-time output for the UI
                 this.emitDocsEvent('docs:doc-output', {
@@ -567,10 +591,60 @@ export class DocsService {
                 });
               }
             }
-          } else if (msg.type === 'result' && msg.subtype === 'success' && msg.result) {
-            // Final result
-            docContent = msg.result;
+          } else if (msg.type === 'result') {
+            // Track result message details for debugging
+            const resultInfo = {
+              subtype: msg.subtype,
+              hasResult: Boolean(msg.result),
+            };
+            resultMessages.push(resultInfo);
+
+            // Use result content if available
+            if (msg.subtype === 'success' && msg.result) {
+              docContent = msg.result;
+              receivedSuccessResult = true;
+            } else {
+              // Non-success result (error, cancelled, etc.)
+              console.log(
+                `[DocsService] Received non-success result for ${displayName}: ` +
+                  `subtype=${msg.subtype}, hasResult=${Boolean(msg.result)}`
+              );
+            }
           }
+        }
+
+        // Log streaming summary for debugging
+        console.log(
+          `[DocsService] ${displayName} streaming complete: ` +
+            `messages=${messageCount}, textBlocks=${textBlockCount}, ` +
+            `results=${JSON.stringify(resultMessages)}`
+        );
+
+        // Log content statistics for debugging
+        console.log(
+          `[DocsService] ${displayName}: Content length=${docContent.length}, ` +
+            `receivedSuccessResult=${receivedSuccessResult}`
+        );
+
+        // Validate content before writing - must contain a markdown heading
+        // This ensures we don't save incomplete "Let me explore..." type content
+        const hasMarkdownHeading = /^#{1,6}\s/m.test(docContent);
+        if (!hasMarkdownHeading) {
+          const preview = docContent.slice(0, 200).replace(/\n/g, ' ');
+          throw new Error(
+            `Generated content for ${displayName} is incomplete - no markdown heading found. ` +
+              `Content length: ${docContent.length}. ` +
+              `Content preview: "${preview}...". ` +
+              `Received success result: ${receivedSuccessResult}`
+          );
+        }
+
+        // Also check minimum content length - real documentation should be at least 500 chars
+        if (docContent.length < 500) {
+          throw new Error(
+            `Generated content for ${displayName} is too short (${docContent.length} chars). ` +
+              `Expected at least 500 characters for valid documentation.`
+          );
         }
 
         // Clean transitional text and write the document to file
@@ -619,17 +693,22 @@ export class DocsService {
           return false;
         }
 
-        // Check if this is a transient CLI error that we should retry
+        // Check if this is a retryable error
+        const errorMessage = (error as Error).message || '';
         const isTransientCLIError =
           (error as Error).name === 'ClaudeCLIError' ||
-          ((error as Error).message?.includes('CLI returned a message') ?? false);
+          errorMessage.includes('CLI returned a message');
+        const isIncompleteContent =
+          errorMessage.includes('is incomplete') || errorMessage.includes('is too short');
 
-        if (isTransientCLIError && attempt < maxRetries) {
+        // Retry transient CLI errors and incomplete content (could be rate limiting)
+        if ((isTransientCLIError || isIncompleteContent) && attempt < maxRetries) {
           console.log(
-            `[DocsService] Transient CLI error for ${displayName}, will retry after delay...`
+            `[DocsService] Retryable error for ${displayName} (${isTransientCLIError ? 'CLI error' : 'incomplete content'}), ` +
+              `will retry after delay (attempt ${attempt + 1}/${maxRetries + 1})...`
           );
           // Wait a bit before retrying (exponential backoff)
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+          await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
           continue;
         }
 

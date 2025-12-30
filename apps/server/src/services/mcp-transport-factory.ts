@@ -14,6 +14,7 @@
 
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpServerConfig, StdioMcpConfig, HttpMcpConfig } from '@automaker/types';
 import { createLogger } from '@automaker/utils';
 
@@ -27,7 +28,15 @@ export type McpTransportType = 'stdio' | 'http';
 /**
  * Union type for all supported transports
  */
-export type McpTransport = StdioClientTransport | SSEClientTransport;
+export type McpTransport =
+  | StdioClientTransport
+  | SSEClientTransport
+  | StreamableHTTPClientTransport;
+
+/**
+ * HTTP transport variant - streamable-http (recommended) or sse (legacy)
+ */
+export type HttpTransportVariant = 'streamable-http' | 'sse';
 
 /**
  * Result of transport creation
@@ -53,6 +62,13 @@ export interface TransportCreateOptions {
   additionalEnv?: Record<string, string>;
   /** Additional headers to merge (for HTTP transport) */
   additionalHeaders?: Record<string, string>;
+  /**
+   * Preferred HTTP transport variant.
+   * - 'streamable-http': Use the newer Streamable HTTP transport (recommended for modern MCP servers)
+   * - 'sse': Use the legacy SSE transport (for older servers)
+   * Default: 'streamable-http'
+   */
+  httpTransportVariant?: HttpTransportVariant;
 }
 
 /**
@@ -237,11 +253,80 @@ export class McpTransportFactory {
   }
 
   /**
-   * Create HTTP/SSE transport with options
+   * Create HTTP transport with options
+   * Supports both Streamable HTTP (modern) and SSE (legacy) transports
    */
   private static createHttpTransport(
     config: HttpMcpConfig,
     options: TransportCreateOptions
+  ): StreamableHTTPClientTransport | SSEClientTransport {
+    const variant = options.httpTransportVariant ?? 'streamable-http';
+
+    // Merge headers
+    let headers = config.headers ? { ...config.headers } : undefined;
+
+    // Expand environment variables in headers if requested
+    if (options.expandEnvVars && headers) {
+      headers = this.expandEnvironmentVariables(headers);
+    }
+
+    // Merge additional headers
+    if (options.additionalHeaders) {
+      headers = { ...headers, ...options.additionalHeaders };
+    }
+
+    const url = new URL(config.url);
+    const requestInit = headers && Object.keys(headers).length > 0 ? { headers } : undefined;
+
+    if (variant === 'streamable-http') {
+      logger.debug(`Creating Streamable HTTP transport: ${config.url}`);
+      return new StreamableHTTPClientTransport(url, {
+        requestInit,
+      });
+    } else {
+      logger.debug(`Creating SSE transport: ${config.url}`);
+      return new SSEClientTransport(url, {
+        requestInit,
+      });
+    }
+  }
+
+  /**
+   * Create Streamable HTTP transport specifically
+   * Used when you need the modern transport directly
+   */
+  static createStreamableHttpTransport(
+    config: HttpMcpConfig,
+    options: TransportCreateOptions = {}
+  ): StreamableHTTPClientTransport {
+    // Merge headers
+    let headers = config.headers ? { ...config.headers } : undefined;
+
+    // Expand environment variables in headers if requested
+    if (options.expandEnvVars && headers) {
+      headers = this.expandEnvironmentVariables(headers);
+    }
+
+    // Merge additional headers
+    if (options.additionalHeaders) {
+      headers = { ...headers, ...options.additionalHeaders };
+    }
+
+    const url = new URL(config.url);
+    logger.debug(`Creating Streamable HTTP transport: ${config.url}`);
+
+    return new StreamableHTTPClientTransport(url, {
+      requestInit: headers && Object.keys(headers).length > 0 ? { headers } : undefined,
+    });
+  }
+
+  /**
+   * Create SSE transport specifically (legacy)
+   * Used when you need the legacy SSE transport directly
+   */
+  static createSseTransport(
+    config: HttpMcpConfig,
+    options: TransportCreateOptions = {}
   ): SSEClientTransport {
     // Merge headers
     let headers = config.headers ? { ...config.headers } : undefined;
@@ -256,12 +341,11 @@ export class McpTransportFactory {
       headers = { ...headers, ...options.additionalHeaders };
     }
 
+    const url = new URL(config.url);
     logger.debug(`Creating SSE transport: ${config.url}`);
 
-    return new SSEClientTransport(new URL(config.url), {
-      requestInit: {
-        headers: headers && Object.keys(headers).length > 0 ? headers : undefined,
-      },
+    return new SSEClientTransport(url, {
+      requestInit: headers && Object.keys(headers).length > 0 ? { headers } : undefined,
     });
   }
 

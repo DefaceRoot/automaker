@@ -232,13 +232,14 @@ export async function findWorktreeByBranch(
 /**
  * Resolve worktree path for a feature by looking up its branchName
  * and finding the actual worktree path from git.
+ * Also returns the feature's trackedFiles for filtering diffs.
  */
 export async function resolveWorktreePath(
   projectPath: string,
   featureId: string
-): Promise<{ path: string; branchName: string } | null> {
+): Promise<{ path: string; branchName: string; trackedFiles?: string[] } | null> {
   try {
-    // Load feature to get branch name
+    // Load feature to get branch name and tracked files
     const feature = await featureLoader.get(projectPath, featureId);
     if (!feature?.branchName) return null;
 
@@ -246,7 +247,11 @@ export async function resolveWorktreePath(
     const worktreeInfo = await findWorktreeByBranch(projectPath, feature.branchName);
     if (!worktreeInfo) return null;
 
-    return { path: worktreeInfo.path, branchName: feature.branchName };
+    return {
+      path: worktreeInfo.path,
+      branchName: feature.branchName,
+      trackedFiles: feature.trackedFiles,
+    };
   } catch {
     return null;
   }

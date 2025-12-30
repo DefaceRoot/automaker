@@ -355,6 +355,9 @@ export function GitDiffPanel({
   const [files, setFiles] = useState<FileStatus[]>([]);
   const [diffContent, setDiffContent] = useState<string>('');
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  // Track whether results are filtered to task-specific changes
+  const [isFiltered, setIsFiltered] = useState<boolean>(false);
+  const [trackedFileCount, setTrackedFileCount] = useState<number>(0);
 
   const loadDiffs = useCallback(async () => {
     setIsLoading(true);
@@ -371,6 +374,9 @@ export function GitDiffPanel({
         if (result.success) {
           setFiles(result.files || []);
           setDiffContent(result.diff || '');
+          // Track filtering metadata for task-specific changes
+          setIsFiltered(result.isFiltered ?? false);
+          setTrackedFileCount(result.trackedFileCount ?? 0);
         } else {
           setError(result.error || 'Failed to load diffs');
         }
@@ -383,6 +389,9 @@ export function GitDiffPanel({
         if (result.success) {
           setFiles(result.files || []);
           setDiffContent(result.diff || '');
+          // Main project diffs are not filtered
+          setIsFiltered(false);
+          setTrackedFileCount(0);
         } else {
           setError(result.error || 'Failed to load diffs');
         }
@@ -497,8 +506,18 @@ export function GitDiffPanel({
               </Button>
             </div>
           ) : files.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
-              <span className="text-sm">No changes detected</span>
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
+              {isFiltered && trackedFileCount === 0 ? (
+                <>
+                  <FileText className="w-6 h-6 text-muted-foreground/50" />
+                  <span className="text-sm">No changes tracked for this task</span>
+                  <span className="text-xs text-muted-foreground/70">
+                    Changes will appear here once the agent modifies files
+                  </span>
+                </>
+              ) : (
+                <span className="text-sm">No changes detected</span>
+              )}
             </div>
           ) : (
             <div>

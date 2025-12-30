@@ -605,6 +605,10 @@ export interface FileDiffsResult {
   files?: FileStatus[];
   hasChanges?: boolean;
   error?: string;
+  /** Whether the results are filtered by task-specific trackedFiles */
+  isFiltered?: boolean;
+  /** Number of files in the task's trackedFiles array */
+  trackedFileCount?: number;
 }
 
 export interface FileDiffResult {

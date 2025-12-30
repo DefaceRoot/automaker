@@ -19,8 +19,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpServerConfig, StdioMcpConfig, HttpMcpConfig, McpToolInfo } from '@automaker/types';
 import { createLogger } from '@automaker/utils';
+
+/** Type for HTTP-based MCP transports */
+type HttpMcpTransport = StreamableHTTPClientTransport | SSEClientTransport;
 
 const logger = createLogger('mcp-server-manager');
 
@@ -37,8 +41,8 @@ export interface McpServerConnection {
   config: McpServerConfig;
   /** MCP client instance */
   client: Client;
-  /** Transport layer (stdio or SSE) */
-  transport: StdioClientTransport | SSEClientTransport;
+  /** Transport layer (stdio, SSE, or Streamable HTTP) */
+  transport: StdioClientTransport | HttpMcpTransport;
   /** Current connection state */
   state: McpConnectionState;
   /** Timestamp of last connection attempt */
@@ -220,42 +224,149 @@ export class McpServerManager {
     logger.info(`Connecting to MCP server: ${config.name} (${serverId})`);
 
     let client: Client | null = null;
-    let transport: StdioClientTransport | SSEClientTransport | null = null;
+    let transport: StdioClientTransport | HttpMcpTransport | null = null;
 
     try {
-      // Create transport based on config type
-      transport = this.createTransport(config);
+      // Handle stdio transport differently from HTTP
+      if (config.transport.type === 'stdio') {
+        // Create stdio transport
+        const stdioConfig = config.transport as StdioMcpConfig;
+        logger.debug(
+          `Creating stdio transport: ${stdioConfig.command} ${stdioConfig.args.join(' ')}`
+        );
 
-      // Create client
-      client = new Client(
-        {
-          name: 'automaker-mcp-manager',
-          version: '1.0.0',
-        },
-        {
-          capabilities: {},
+        transport = new StdioClientTransport({
+          command: stdioConfig.command,
+          args: stdioConfig.args,
+          env: stdioConfig.env,
+        });
+
+        // Create client
+        client = new Client(
+          {
+            name: 'automaker-mcp-manager',
+            version: '1.0.0',
+          },
+          {
+            capabilities: {},
+          }
+        );
+
+        // Update connection state
+        const connection: McpServerConnection = {
+          id: serverId,
+          config,
+          client,
+          transport,
+          state: 'connecting',
+          lastConnectionAttempt: new Date(),
+          failureCount: existing?.failureCount ?? 0,
+        };
+        this.connections.set(serverId, connection);
+
+        // Connect with timeout
+        const connectPromise = client.connect(transport);
+        const connectTimeout = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
+        });
+
+        await Promise.race([connectPromise, connectTimeout]);
+      } else {
+        // For HTTP transport, try Streamable HTTP first, then fall back to SSE
+        const httpConfig = config.transport as HttpMcpConfig;
+        const url = new URL(httpConfig.url);
+        const requestInit = httpConfig.headers ? { headers: httpConfig.headers } : undefined;
+
+        // Create client first
+        client = new Client(
+          {
+            name: 'automaker-mcp-manager',
+            version: '1.0.0',
+          },
+          {
+            capabilities: {},
+          }
+        );
+
+        // Try Streamable HTTP transport first (modern servers)
+        logger.debug(`Trying Streamable HTTP transport: ${httpConfig.url}`);
+        transport = new StreamableHTTPClientTransport(url, { requestInit });
+
+        // Update connection state
+        const connection: McpServerConnection = {
+          id: serverId,
+          config,
+          client,
+          transport,
+          state: 'connecting',
+          lastConnectionAttempt: new Date(),
+          failureCount: existing?.failureCount ?? 0,
+        };
+        this.connections.set(serverId, connection);
+
+        try {
+          const connectPromise = client.connect(transport);
+          const connectTimeout = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
+          });
+
+          await Promise.race([connectPromise, connectTimeout]);
+          logger.info(`Connected via Streamable HTTP transport: ${config.name}`);
+        } catch (streamableError) {
+          // Check if it's a 4xx error indicating the server doesn't support Streamable HTTP
+          const errorMessage =
+            streamableError instanceof Error ? streamableError.message : String(streamableError);
+          const is4xxError =
+            errorMessage.includes('405') ||
+            errorMessage.includes('404') ||
+            errorMessage.includes('400') ||
+            errorMessage.includes('4');
+
+          if (is4xxError || errorMessage.includes('SSE') || errorMessage.includes('sse')) {
+            // Try to clean up the failed transport
+            try {
+              await client.close();
+            } catch {
+              // Ignore cleanup errors
+            }
+
+            // Fall back to SSE transport (legacy servers)
+            logger.debug(
+              `Streamable HTTP failed, falling back to SSE transport: ${httpConfig.url}`
+            );
+            transport = new SSEClientTransport(url, { requestInit });
+
+            // Create a new client for SSE
+            client = new Client(
+              {
+                name: 'automaker-mcp-manager',
+                version: '1.0.0',
+              },
+              {
+                capabilities: {},
+              }
+            );
+
+            // Update connection with new client/transport
+            connection.client = client;
+            connection.transport = transport;
+
+            const sseConnectPromise = client.connect(transport);
+            const sseConnectTimeout = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
+            });
+
+            await Promise.race([sseConnectPromise, sseConnectTimeout]);
+            logger.info(`Connected via SSE transport (fallback): ${config.name}`);
+          } else {
+            // Re-throw if it's not a transport compatibility issue
+            throw streamableError;
+          }
         }
-      );
+      }
 
-      // Update connection state
-      const connection: McpServerConnection = {
-        id: serverId,
-        config,
-        client,
-        transport,
-        state: 'connecting',
-        lastConnectionAttempt: new Date(),
-        failureCount: existing?.failureCount ?? 0,
-      };
-      this.connections.set(serverId, connection);
-
-      // Connect with timeout
-      const connectPromise = client.connect(transport);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
-      });
-
-      await Promise.race([connectPromise, timeoutPromise]);
+      // Get the connection from the map (it was set in the if/else blocks above)
+      const connection = this.connections.get(serverId)!;
 
       // Get server info
       const serverInfo = client.getServerVersion();
@@ -531,36 +642,6 @@ export class McpServerManager {
       failed: connections.filter((c) => c.state === 'failed').length,
       disconnected: connections.filter((c) => c.state === 'disconnected').length,
     };
-  }
-
-  /**
-   * Create transport based on configuration type
-   *
-   * @param config - MCP server configuration
-   * @returns Transport instance
-   */
-  private createTransport(config: McpServerConfig): StdioClientTransport | SSEClientTransport {
-    if (config.transport.type === 'stdio') {
-      const stdioConfig = config.transport as StdioMcpConfig;
-      logger.debug(
-        `Creating stdio transport: ${stdioConfig.command} ${stdioConfig.args.join(' ')}`
-      );
-
-      return new StdioClientTransport({
-        command: stdioConfig.command,
-        args: stdioConfig.args,
-        env: stdioConfig.env,
-      });
-    } else {
-      const httpConfig = config.transport as HttpMcpConfig;
-      logger.debug(`Creating SSE transport: ${httpConfig.url}`);
-
-      return new SSEClientTransport(new URL(httpConfig.url), {
-        requestInit: {
-          headers: httpConfig.headers,
-        },
-      });
-    }
   }
 }
 

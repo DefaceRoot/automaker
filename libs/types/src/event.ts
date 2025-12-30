@@ -32,6 +32,7 @@ export type EventType =
   | 'docs:doc-completed'
   | 'docs:doc-error'
   | 'docs:generation-completed'
-  | 'claude:usage-update';
+  | 'claude:usage-update'
+  | 'mcp-server:event';
 
 export type EventCallback = (type: EventType, payload: unknown) => void;

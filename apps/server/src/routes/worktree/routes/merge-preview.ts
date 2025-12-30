@@ -31,6 +31,9 @@ export function createMergePreviewHandler() {
       if (!projectPath) {
         res.status(400).json({
           success: false,
+          hasConflicts: false,
+          conflictCount: 0,
+          conflicts: [],
           error: 'projectPath is required',
         } satisfies MergePreviewResult);
         return;
