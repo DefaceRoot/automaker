@@ -36,6 +36,7 @@ import {
   getCurrentCommitHash,
   createManifest,
   updateManifestDoc,
+  syncManifestWithDisk,
 } from './docs-manifest.js';
 
 /**
@@ -788,6 +789,21 @@ export class DocsService {
    * @returns Array of document info objects
    */
   async listDocs(projectPath: string): Promise<DocInfo[]> {
+    // First, sync the manifest with files that exist on disk
+    // This handles docs that were pulled from git but generated on another machine
+    try {
+      const syncResult = await syncManifestWithDisk(projectPath);
+      if (syncResult.synced) {
+        console.log(
+          `[DocsService] Synced manifest with disk: found ${syncResult.foundDocs.length} existing doc(s)` +
+            (syncResult.createdManifest ? ' (created new manifest)' : '')
+        );
+      }
+    } catch (error) {
+      console.error('[DocsService] Failed to sync manifest with disk:', error);
+      // Continue anyway - the listing should still work
+    }
+
     const docsDir = path.join(projectPath, 'docs');
     const docs: DocInfo[] = [];
 

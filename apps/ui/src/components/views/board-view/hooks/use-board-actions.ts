@@ -113,43 +113,8 @@ export function useBoardActions({
       // Non-empty string is the actual branch name (for non-primary worktrees)
       const finalBranchName = featureData.branchName || undefined;
 
-      // If worktrees enabled and a branch is specified, create the worktree now
-      // This ensures the worktree exists before the feature starts
-      if (useWorktrees && finalBranchName && currentProject) {
-        try {
-          const api = getElectronAPI();
-          if (api?.worktree?.create) {
-            const result = await api.worktree.create(currentProject.path, finalBranchName);
-            if (result.success && result.worktree) {
-              console.log(
-                `[Board] Worktree for branch "${finalBranchName}" ${
-                  result.worktree?.isNew ? 'created' : 'already exists'
-                }`
-              );
-              // Auto-select the worktree when creating a feature for it
-              onWorktreeAutoSelect?.({
-                path: result.worktree.path,
-                branch: result.worktree.branch,
-              });
-              // Refresh worktree list in UI
-              onWorktreeCreated?.();
-            } else if (!result.success) {
-              console.error(
-                `[Board] Failed to create worktree for branch "${finalBranchName}":`,
-                result.error
-              );
-              toast.error('Failed to create worktree', {
-                description: result.error || 'An error occurred',
-              });
-            }
-          }
-        } catch (error) {
-          console.error('[Board] Error creating worktree:', error);
-          toast.error('Failed to create worktree', {
-            description: error instanceof Error ? error.message : 'An error occurred',
-          });
-        }
-      }
+      // Note: Worktree creation is now handled automatically by the server during feature creation
+      // The server uses worktreeCategory to create properly named worktrees like feature/001-title
 
       // Check if we need to generate a title
       const needsTitleGeneration = !featureData.title.trim() && featureData.description.trim();
@@ -237,38 +202,8 @@ export function useBoardActions({
     ) => {
       const finalBranchName = updates.branchName || undefined;
 
-      // If worktrees enabled and a branch is specified, create the worktree now
-      // This ensures the worktree exists before the feature starts
-      if (useWorktrees && finalBranchName && currentProject) {
-        try {
-          const api = getElectronAPI();
-          if (api?.worktree?.create) {
-            const result = await api.worktree.create(currentProject.path, finalBranchName);
-            if (result.success) {
-              console.log(
-                `[Board] Worktree for branch "${finalBranchName}" ${
-                  result.worktree?.isNew ? 'created' : 'already exists'
-                }`
-              );
-              // Refresh worktree list in UI
-              onWorktreeCreated?.();
-            } else {
-              console.error(
-                `[Board] Failed to create worktree for branch "${finalBranchName}":`,
-                result.error
-              );
-              toast.error('Failed to create worktree', {
-                description: result.error || 'An error occurred',
-              });
-            }
-          }
-        } catch (error) {
-          console.error('[Board] Error creating worktree:', error);
-          toast.error('Failed to create worktree', {
-            description: error instanceof Error ? error.message : 'An error occurred',
-          });
-        }
-      }
+      // Note: Worktree creation is handled by the server during feature creation
+      // Updates to existing features don't create new worktrees
 
       const finalUpdates = {
         ...updates,

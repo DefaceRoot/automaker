@@ -28,6 +28,39 @@ type HttpMcpTransport = StreamableHTTPClientTransport | SSEClientTransport;
 
 const logger = createLogger('mcp-server-manager');
 
+/**
+ * Additional Windows environment variables that the MCP SDK's default list is missing.
+ * These are critical for proper command resolution on Windows.
+ *
+ * The MCP SDK's StdioClientTransport only inherits a limited set of env vars on Windows:
+ * APPDATA, HOMEDRIVE, HOMEPATH, LOCALAPPDATA, PATH, PROCESSOR_ARCHITECTURE,
+ * SYSTEMDRIVE, SYSTEMROOT, TEMP, USERNAME, USERPROFILE, PROGRAMFILES
+ *
+ * Missing critically:
+ * - PATHEXT: Needed for Windows to resolve .cmd, .bat, .exe, etc. (used by npx, npm, etc.)
+ * - COMSPEC: Path to cmd.exe (some tools need this)
+ */
+const WINDOWS_EXTRA_ENV_VARS = ['PATHEXT', 'COMSPEC'];
+
+/**
+ * Get additional Windows environment variables that should be passed to stdio transports.
+ * These are merged with the user-provided env and the SDK's default env.
+ */
+function getWindowsExtraEnv(): Record<string, string> {
+  if (process.platform !== 'win32') {
+    return {};
+  }
+
+  const extraEnv: Record<string, string> = {};
+  for (const key of WINDOWS_EXTRA_ENV_VARS) {
+    const value = process.env[key];
+    if (value) {
+      extraEnv[key] = value;
+    }
+  }
+  return extraEnv;
+}
+
 /** Connection states for tracking server lifecycle */
 export type McpConnectionState = 'disconnected' | 'connecting' | 'connected' | 'failed' | 'closing';
 
@@ -235,10 +268,17 @@ export class McpServerManager {
           `Creating stdio transport: ${stdioConfig.command} ${stdioConfig.args.join(' ')}`
         );
 
+        // Merge Windows-specific env vars with user-provided env
+        // This ensures PATHEXT and COMSPEC are available for proper command resolution
+        const envWithWindowsVars = {
+          ...getWindowsExtraEnv(),
+          ...stdioConfig.env,
+        };
+
         transport = new StdioClientTransport({
           command: stdioConfig.command,
           args: stdioConfig.args,
-          env: stdioConfig.env,
+          env: Object.keys(envWithWindowsVars).length > 0 ? envWithWindowsVars : undefined,
         });
 
         // Create client

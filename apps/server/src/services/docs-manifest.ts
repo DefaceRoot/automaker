@@ -324,3 +324,82 @@ export function updateManifestDoc(
     status: success ? 'success' : 'error',
   };
 }
+
+/**
+ * Sync the manifest with files that actually exist on disk.
+ * This handles the case where docs were generated on another machine
+ * and pulled via git, but no manifest exists locally.
+ *
+ * @param projectPath - The project directory path
+ * @returns Object indicating if sync was performed and which docs were found
+ */
+export async function syncManifestWithDisk(
+  projectPath: string
+): Promise<{ synced: boolean; foundDocs: DocType[]; createdManifest: boolean }> {
+  const { DOC_TYPES } = await import('./docs-prompts.js');
+  const docsDir = path.join(projectPath, 'docs');
+  const foundDocs: DocType[] = [];
+
+  // Check which doc files exist on disk
+  for (const docTypeInfo of DOC_TYPES) {
+    const docPath = path.join(docsDir, docTypeInfo.filename);
+    try {
+      await secureFs.stat(docPath);
+      foundDocs.push(docTypeInfo.type);
+    } catch {
+      // File doesn't exist
+    }
+  }
+
+  // If no docs found, nothing to sync
+  if (foundDocs.length === 0) {
+    return { synced: false, foundDocs: [], createdManifest: false };
+  }
+
+  // Read existing manifest
+  let manifest = await readDocsManifest(projectPath);
+  let createdManifest = false;
+
+  // If no manifest exists, create one for the existing docs
+  if (!manifest) {
+    console.log(
+      `[DocsManifest] Found ${foundDocs.length} existing doc(s) without manifest - creating synthetic manifest`
+    );
+
+    // Get current commit hash for reference
+    const commitHash = await getCurrentCommitHash(projectPath);
+
+    manifest = {
+      version: 1,
+      lastGeneratedAt: new Date().toISOString(),
+      lastCommitHash: commitHash,
+      model: 'unknown', // We don't know what model was used
+      mode: 'generate',
+      docs: {},
+    };
+    createdManifest = true;
+  }
+
+  // Update manifest with found docs that are missing or marked as error
+  let needsUpdate = createdManifest;
+  for (const docType of foundDocs) {
+    const existing = manifest.docs[docType];
+    // If doc doesn't exist in manifest or was marked as error, mark it as success
+    if (!existing || existing.status === 'error') {
+      manifest.docs[docType] = {
+        generatedAt: existing?.generatedAt ?? new Date().toISOString(),
+        status: 'success',
+      };
+      needsUpdate = true;
+      console.log(`[DocsManifest] Synced doc '${docType}' - file exists on disk`);
+    }
+  }
+
+  // Write updated manifest if changes were made
+  if (needsUpdate) {
+    await writeDocsManifest(projectPath, manifest);
+    console.log(`[DocsManifest] Manifest synced with ${foundDocs.length} doc(s) on disk`);
+  }
+
+  return { synced: needsUpdate, foundDocs, createdManifest };
+}

@@ -21,6 +21,39 @@ import { createLogger } from '@automaker/utils';
 const logger = createLogger('mcp-transport-factory');
 
 /**
+ * Additional Windows environment variables that the MCP SDK's default list is missing.
+ * These are critical for proper command resolution on Windows.
+ *
+ * The MCP SDK's StdioClientTransport only inherits a limited set of env vars on Windows:
+ * APPDATA, HOMEDRIVE, HOMEPATH, LOCALAPPDATA, PATH, PROCESSOR_ARCHITECTURE,
+ * SYSTEMDRIVE, SYSTEMROOT, TEMP, USERNAME, USERPROFILE, PROGRAMFILES
+ *
+ * Missing critically:
+ * - PATHEXT: Needed for Windows to resolve .cmd, .bat, .exe, etc. (used by npx, npm, etc.)
+ * - COMSPEC: Path to cmd.exe (some tools need this)
+ */
+const WINDOWS_EXTRA_ENV_VARS = ['PATHEXT', 'COMSPEC'];
+
+/**
+ * Get additional Windows environment variables that should be passed to stdio transports.
+ * These are merged with the user-provided env and the SDK's default env.
+ */
+function getWindowsExtraEnv(): Record<string, string> {
+  if (process.platform !== 'win32') {
+    return {};
+  }
+
+  const extraEnv: Record<string, string> = {};
+  for (const key of WINDOWS_EXTRA_ENV_VARS) {
+    const value = process.env[key];
+    if (value) {
+      extraEnv[key] = value;
+    }
+  }
+  return extraEnv;
+}
+
+/**
  * Transport types supported by the factory
  */
 export type McpTransportType = 'stdio' | 'http';
@@ -230,8 +263,12 @@ export class McpTransportFactory {
     config: StdioMcpConfig,
     options: TransportCreateOptions
   ): StdioClientTransport {
-    // Merge environment variables
-    let env = config.env ? { ...config.env } : undefined;
+    // Start with Windows-specific env vars that the MCP SDK is missing
+    // This ensures PATHEXT and COMSPEC are available for proper command resolution
+    let env: Record<string, string> | undefined = {
+      ...getWindowsExtraEnv(),
+      ...config.env,
+    };
 
     // Expand environment variables if requested
     if (options.expandEnvVars && env) {

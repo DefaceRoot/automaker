@@ -375,7 +375,7 @@ export function createCreateHandler(settingsService?: SettingsService) {
         success: true,
         worktree: {
           path: normalizePath(absoluteWorktreePath),
-          branch: branchName,
+          branch: actualBranchName, // Use computed branch name (categorized or traditional)
           isNew: !branchExists,
         },
         setupScript: setupScriptResult,
