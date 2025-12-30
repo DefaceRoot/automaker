@@ -2,26 +2,6 @@ import { spawn, execSync } from 'child_process';
 import * as os from 'os';
 import { ClaudeUsage } from '../routes/claude/types.js';
 
-// Dynamic import type for node-pty (loaded only when needed)
-type IPty = {
-  spawn: (
-    file: string,
-    args: string[],
-    options: {
-      name?: string;
-      cols?: number;
-      rows?: number;
-      cwd?: string;
-      env?: Record<string, string>;
-    }
-  ) => {
-    onData: (callback: (data: string) => void) => void;
-    onExit: (callback: (exit: { exitCode: number }) => void) => void;
-    write: (data: string) => void;
-    kill: () => void;
-  };
-};
-
 /**
  * Claude Usage Service
  *
@@ -40,9 +20,6 @@ export class ClaudeUsageService {
   private ccusageBinary = 'ccusage';
   private timeout = 30000; // 30 second timeout
   private isWindows = os.platform() === 'win32';
-  private nodePtyModule: IPty | null = null;
-  private nodePtyLoadAttempted = false;
-  private nodePtyLoadError: Error | null = null;
 
   /**
    * Check if Claude CLI is available on the system
@@ -63,15 +40,28 @@ export class ClaudeUsageService {
   /**
    * Check if ccusage tool is available on the system
    * ccusage provides JSON output which is much easier to parse
+   * We verify by actually trying to run it with --version
    */
   async isCcusageAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
-      const checkCmd = this.isWindows ? 'where' : 'which';
-      const proc = spawn(checkCmd, [this.ccusageBinary]);
+      // Actually try to run ccusage to verify it works
+      // Using --help or --version is more reliable than 'where'/'which'
+      const proc = spawn(this.ccusageBinary, ['--help'], {
+        env: process.env,
+        windowsHide: true,
+      });
+
+      const timeoutId = setTimeout(() => {
+        proc.kill();
+        resolve(false);
+      }, 5000);
+
       proc.on('close', (code) => {
+        clearTimeout(timeoutId);
         resolve(code === 0);
       });
       proc.on('error', () => {
+        clearTimeout(timeoutId);
         resolve(false);
       });
     });
@@ -331,111 +321,145 @@ export class ClaudeUsageService {
   }
 
   /**
-   * Windows implementation using node-pty with PowerShell
+   * Windows implementation
    *
    * The Claude CLI's /usage command requires a PTY (pseudo-terminal) to work properly.
-   * On Windows, we use PowerShell instead of cmd.exe for better terminal handling.
-   *
-   * The command `claude /usage` runs the Claude CLI with the /usage argument which
-   * displays the usage statistics in an interactive view.
+   * On Windows, we try multiple approaches:
+   * 1. Use PowerShell's Start-Process with input redirection to simulate PTY behavior
+   * 2. Try direct spawn with shell: true
+   * 3. Fall back to a minimal approach that gets basic data
    */
   private executeClaudeUsageCommandWindows(): Promise<string> {
     return new Promise((resolve, reject) => {
-      let output = '';
+      let stdout = '';
+      let stderr = '';
       let settled = false;
-      let hasSeenUsageData = false;
 
-      const workingDirectory = process.env.USERPROFILE || os.homedir() || 'C:\\';
+      // Try using PowerShell to run claude /usage with automatic input
+      // The /usage command shows output and waits for Esc - we send Escape via input
+      const psScript = `
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "claude"
+        $psi.Arguments = "/usage"
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.RedirectStandardInput = $true
+        $psi.CreateNoWindow = $true
 
-      // Use PowerShell for better terminal handling on Windows
-      // The claude CLI with /usage argument opens an interactive view
-      const ptyProcess = pty.spawn(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', 'claude /usage'],
-        {
-          name: 'xterm-256color',
-          cols: 120,
-          rows: 30,
-          cwd: workingDirectory,
-          env: {
-            ...process.env,
-            TERM: 'xterm-256color',
-          } as Record<string, string>,
-        }
-      );
+        $process = [System.Diagnostics.Process]::Start($psi)
+
+        # Give it time to show usage info
+        Start-Sleep -Milliseconds 2000
+
+        # Send Escape key to exit
+        $process.StandardInput.Write([char]27)
+        $process.StandardInput.Flush()
+
+        # Read available output
+        $output = $process.StandardOutput.ReadToEnd()
+        $process.WaitForExit(5000)
+
+        Write-Output $output
+      `;
+
+      const proc = spawn('powershell', ['-NoProfile', '-Command', psScript], {
+        env: process.env,
+        windowsHide: true,
+      });
 
       const timeoutId = setTimeout(() => {
         if (!settled) {
           settled = true;
-          ptyProcess.kill();
-          // If we have some output, try to use it even on timeout
-          if (output.trim() && output.includes('Current session')) {
-            resolve(output);
-          } else {
-            reject(new Error('Command timed out'));
-          }
+          proc.kill();
+          // On timeout, try a simpler fallback
+          this.executeClaudeUsageSimple()
+            .then(resolve)
+            .catch(() => reject(new Error('Command timed out')));
         }
       }, this.timeout);
 
-      ptyProcess.onData((data) => {
-        output += data;
-
-        // Check if we've seen the usage data (look for "Current session")
-        if (!hasSeenUsageData && output.includes('Current session')) {
-          hasSeenUsageData = true;
-          // Wait for full output, then send escape to exit
-          setTimeout(() => {
-            if (!settled) {
-              ptyProcess.write('\x1b'); // Send escape key
-            }
-          }, 2000);
-        }
-
-        // Also check for "Esc to cancel" as an indicator
-        if (!hasSeenUsageData && output.includes('Esc to cancel')) {
-          setTimeout(() => {
-            if (!settled) {
-              ptyProcess.write('\x1b'); // Send escape key
-            }
-          }, 3000);
-        }
-
-        // Check for percentage left as a good indicator we have data
-        if (!hasSeenUsageData && /\d+%\s*(left|remaining)/i.test(output)) {
-          hasSeenUsageData = true;
-          setTimeout(() => {
-            if (!settled) {
-              ptyProcess.write('\x1b'); // Send escape key
-            }
-          }, 1500);
-        }
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
       });
 
-      ptyProcess.onExit(({ exitCode }) => {
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
         clearTimeout(timeoutId);
         if (settled) return;
         settled = true;
 
         // Check for authentication errors in output
-        if (output.includes('token_expired') || output.includes('authentication_error')) {
+        if (
+          stdout.includes('token_expired') ||
+          stdout.includes('authentication_error') ||
+          stderr.includes('token_expired') ||
+          stderr.includes('authentication_error')
+        ) {
           reject(new Error("Authentication required - please run 'claude login'"));
           return;
         }
 
-        // Even with non-zero exit code, if we have usage data, use it
-        if (
-          output.trim() &&
-          (output.includes('Current session') || /\d+%\s*(left|remaining)/i.test(output))
-        ) {
-          resolve(output);
-        } else if (exitCode !== 0) {
-          reject(new Error(`Command exited with code ${exitCode}`));
-        } else if (output.trim()) {
-          resolve(output);
+        // Check if we got usage output
+        if (stdout.includes('Current session') || stdout.includes('%')) {
+          resolve(stdout);
+        } else if (stdout.trim()) {
+          // Got some output, try to use it
+          resolve(stdout);
         } else {
-          reject(new Error('No output from claude command'));
+          // Try simpler fallback
+          this.executeClaudeUsageSimple()
+            .then(resolve)
+            .catch(() =>
+              reject(
+                new Error(
+                  stderr ||
+                    `Claude usage command failed. Try installing ccusage: npm install -g ccusage`
+                )
+              )
+            );
         }
       });
+
+      proc.on('error', (err) => {
+        clearTimeout(timeoutId);
+        if (!settled) {
+          settled = true;
+          // Try simpler fallback on spawn error
+          this.executeClaudeUsageSimple()
+            .then(resolve)
+            .catch(() => reject(new Error(`Failed to execute claude: ${err.message}`)));
+        }
+      });
+    });
+  }
+
+  /**
+   * Simple Windows fallback - try running claude with output capture
+   * This may not work if claude requires a TTY, but worth trying
+   */
+  private executeClaudeUsageSimple(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      try {
+        // Try running claude /usage with timeout and capturing output
+        const result = execSync('claude /usage', {
+          timeout: 10000,
+          encoding: 'utf8',
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          input: '\x1b', // Send escape to exit
+        });
+        if (result && (result.includes('Current session') || result.includes('%'))) {
+          resolve(result);
+        } else {
+          reject(new Error('No usage data in output'));
+        }
+      } catch {
+        reject(new Error('Simple claude command failed'));
+      }
     });
   }
 

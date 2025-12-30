@@ -948,6 +948,19 @@ export function useBoardActions({
     });
   }, [features, runningAutoTasks, autoMode, updateFeature, persistFeatureUpdate]);
 
+  const handleDeleteAllBacklog = useCallback(async () => {
+    const backlogFeatures = features.filter((f) => f.status === 'backlog');
+
+    for (const feature of backlogFeatures) {
+      removeFeature(feature.id);
+      persistFeatureDelete(feature.id);
+    }
+
+    toast.success('All backlog features deleted', {
+      description: `Deleted ${backlogFeatures.length} feature(s).`,
+    });
+  }, [features, removeFeature, persistFeatureDelete]);
+
   return {
     handleAddFeature,
     handleUpdateFeature,
@@ -969,5 +982,6 @@ export function useBoardActions({
     handleForceStopFeature,
     handleStartNextFeatures,
     handleArchiveAllVerified,
+    handleDeleteAllBacklog,
   };
 }

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { HotkeyButton } from '@/components/ui/hotkey-button';
 import { KanbanColumn, KanbanCard } from './components';
 import { Feature } from '@/store/app-store';
-import { FastForward, Lightbulb, Archive } from 'lucide-react';
+import { FastForward, Lightbulb, Archive, Trash2 } from 'lucide-react';
 import { useKeyboardShortcutsConfig } from '@/hooks/use-keyboard-shortcuts';
 import { useResponsiveKanban } from '@/hooks/use-responsive-kanban';
 import { COLUMNS, ColumnId } from './constants';
@@ -50,6 +50,7 @@ interface KanbanBoardProps {
   onShowSuggestions: () => void;
   suggestionsCount: number;
   onArchiveAllVerified: () => void;
+  onDeleteAllBacklog: () => void;
 }
 
 export function KanbanBoard({
@@ -84,6 +85,7 @@ export function KanbanBoard({
   onShowSuggestions,
   suggestionsCount,
   onArchiveAllVerified,
+  onDeleteAllBacklog,
 }: KanbanBoardProps) {
   // Use responsive column widths based on window size
   // containerStyle handles centering and ensures columns fit without horizontal scroll in Electron
@@ -144,18 +146,30 @@ export function KanbanBoard({
                         )}
                       </Button>
                       {columnFeatures.length > 0 && (
-                        <HotkeyButton
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10"
-                          onClick={onStartNextFeatures}
-                          hotkey={shortcuts.startNext}
-                          hotkeyActive={false}
-                          data-testid="start-next-button"
-                        >
-                          <FastForward className="w-3 h-3 mr-1" />
-                          Make
-                        </HotkeyButton>
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={onDeleteAllBacklog}
+                            title="Delete All Backlog"
+                            data-testid="delete-all-backlog-button"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <HotkeyButton
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10"
+                            onClick={onStartNextFeatures}
+                            hotkey={shortcuts.startNext}
+                            hotkeyActive={false}
+                            data-testid="start-next-button"
+                          >
+                            <FastForward className="w-3 h-3 mr-1" />
+                            Make
+                          </HotkeyButton>
+                        </>
                       )}
                     </div>
                   ) : undefined

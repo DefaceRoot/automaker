@@ -3,6 +3,7 @@ export { AgentOutputModal } from './agent-output-modal';
 export { BacklogPlanDialog } from './backlog-plan-dialog';
 export { CompletedFeaturesModal } from './completed-features-modal';
 export { ArchiveAllVerifiedDialog } from './archive-all-verified-dialog';
+export { DeleteAllBacklogDialog } from './delete-all-backlog-dialog';
 export { DeleteCompletedFeatureDialog } from './delete-completed-feature-dialog';
 export { EditFeatureDialog } from './edit-feature-dialog';
 export { FeatureSuggestionsDialog } from './feature-suggestions-dialog';

@@ -30,6 +30,7 @@ import {
   BacklogPlanDialog,
   CompletedFeaturesModal,
   ArchiveAllVerifiedDialog,
+  DeleteAllBacklogDialog,
   DeleteCompletedFeatureDialog,
   EditFeatureDialog,
   FeatureSuggestionsDialog,
@@ -105,6 +106,7 @@ export function BoardView() {
   const [outputFeature, setOutputFeature] = useState<Feature | null>(null);
   const [featuresWithContext, setFeaturesWithContext] = useState<Set<string>>(new Set());
   const [showArchiveAllVerifiedDialog, setShowArchiveAllVerifiedDialog] = useState(false);
+  const [showDeleteAllBacklogDialog, setShowDeleteAllBacklogDialog] = useState(false);
   const [showBoardBackgroundModal, setShowBoardBackgroundModal] = useState(false);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
   const [deleteCompletedFeature, setDeleteCompletedFeature] = useState<Feature | null>(null);
@@ -401,6 +403,7 @@ export function BoardView() {
     handleForceStopFeature,
     handleStartNextFeatures,
     handleArchiveAllVerified,
+    handleDeleteAllBacklog,
   } = useBoardActions({
     currentProject,
     features: hookFeatures,
@@ -1128,6 +1131,7 @@ export function BoardView() {
             onShowSuggestions={() => setShowSuggestionsDialog(true)}
             suggestionsCount={suggestionsCount}
             onArchiveAllVerified={() => setShowArchiveAllVerifiedDialog(true)}
+            onDeleteAllBacklog={() => setShowDeleteAllBacklogDialog(true)}
           />
         ) : (
           <GraphView
@@ -1236,6 +1240,17 @@ export function BoardView() {
         onConfirm={async () => {
           await handleArchiveAllVerified();
           setShowArchiveAllVerifiedDialog(false);
+        }}
+      />
+
+      {/* Delete All Backlog Dialog */}
+      <DeleteAllBacklogDialog
+        open={showDeleteAllBacklogDialog}
+        onOpenChange={setShowDeleteAllBacklogDialog}
+        backlogCount={getColumnFeatures('backlog').length}
+        onConfirm={async () => {
+          await handleDeleteAllBacklog();
+          setShowDeleteAllBacklogDialog(false);
         }}
       />
 
