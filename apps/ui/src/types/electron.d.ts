@@ -969,6 +969,18 @@ export interface WorktreeAPI {
     filesChanged?: number;
     insertions?: number;
     deletions?: number;
+    changedFiles?: string[]; // List of file paths that were staged
+    error?: string;
+  }>;
+
+  // Revert staged changes from a specific task
+  revertStaged: (
+    projectPath: string,
+    files: string[],
+    targetBranch?: string
+  ) => Promise<{
+    success: boolean;
+    revertedFiles?: string[];
     error?: string;
   }>;
 }

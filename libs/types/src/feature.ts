@@ -57,6 +57,12 @@ export interface Feature {
     tasksCompleted?: number;
     tasksTotal?: number;
   };
+  /** Tracks when changes from this task have been staged to a target branch */
+  stagedToTarget?: {
+    targetBranch: string; // e.g., "main"
+    stagedFiles: string[]; // Files that were staged from this task
+    stagedAt: string; // ISO timestamp
+  };
   error?: string;
   summary?: string;
   startedAt?: string;

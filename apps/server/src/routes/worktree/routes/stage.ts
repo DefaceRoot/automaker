@@ -50,6 +50,7 @@ interface StageResponse {
   filesChanged?: number;
   insertions?: number;
   deletions?: number;
+  changedFiles?: string[]; // List of file paths that were staged
   error?: string;
 }
 
@@ -256,9 +257,12 @@ export function createStageHandler() {
         filesChanged: diffSummary.filesChanged,
         insertions: diffSummary.insertions,
         deletions: diffSummary.deletions,
+        changedFiles: diffSummary.changedFiles,
       };
 
-      console.log(`[Stage] Successfully staged changes: ${diffSummary.summary}`);
+      console.log(
+        `[Stage] Successfully staged changes: ${diffSummary.summary} (${diffSummary.changedFiles.length} files)`
+      );
       res.json(response);
     } catch (error) {
       logError(error, 'Stage worktree changes failed');
@@ -305,9 +309,13 @@ async function abortMerge(projectPath: string, originalBranch: string | null): P
 /**
  * Get diff summary for staged changes
  */
-async function getDiffSummary(
-  projectPath: string
-): Promise<{ summary: string; filesChanged: number; insertions: number; deletions: number }> {
+async function getDiffSummary(projectPath: string): Promise<{
+  summary: string;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  changedFiles: string[];
+}> {
   try {
     // Get stat for staged changes (from the merge)
     const { stdout } = await execAsync('git diff --cached --stat', {
@@ -324,11 +332,15 @@ async function getDiffSummary(
     const insertMatch = summaryLine.match(/(\d+)\s+insertions?\(\+\)/);
     const deleteMatch = summaryLine.match(/(\d+)\s+deletions?\(-\)/);
 
+    // Get the list of changed file paths
+    const changedFiles = await getChangedFiles(projectPath);
+
     return {
       summary: summaryLine.trim() || 'No changes staged',
       filesChanged: filesMatch ? parseInt(filesMatch[1], 10) : 0,
       insertions: insertMatch ? parseInt(insertMatch[1], 10) : 0,
       deletions: deleteMatch ? parseInt(deleteMatch[1], 10) : 0,
+      changedFiles,
     };
   } catch {
     return {
@@ -336,7 +348,27 @@ async function getDiffSummary(
       filesChanged: 0,
       insertions: 0,
       deletions: 0,
+      changedFiles: [],
     };
+  }
+}
+
+/**
+ * Get list of changed file paths from staged changes
+ */
+async function getChangedFiles(projectPath: string): Promise<string[]> {
+  try {
+    const { stdout } = await execAsync('git diff --cached --name-only', {
+      cwd: projectPath,
+      env: execEnv,
+    });
+
+    return stdout
+      .trim()
+      .split('\n')
+      .filter((file) => file.length > 0);
+  } catch {
+    return [];
   }
 }
 

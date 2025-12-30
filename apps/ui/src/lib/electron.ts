@@ -1631,6 +1631,15 @@ function createMockWorktreeAPI(): WorktreeAPI {
         filesChanged: 3,
         insertions: 50,
         deletions: 10,
+        changedFiles: ['src/feature.ts', 'src/utils.ts', 'README.md'],
+      };
+    },
+
+    revertStaged: async (projectPath: string, files: string[], targetBranch?: string) => {
+      console.log('[Mock] Reverting staged changes:', { projectPath, files, targetBranch });
+      return {
+        success: true,
+        revertedFiles: files,
       };
     },
   };

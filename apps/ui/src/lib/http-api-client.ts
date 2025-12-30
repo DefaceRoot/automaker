@@ -844,6 +844,12 @@ export class HttpApiClient implements ElectronAPI {
         featureId,
         ...options,
       }),
+    revertStaged: (projectPath: string, files: string[], targetBranch?: string) =>
+      this.post('/api/worktree/revert-staged', {
+        projectPath,
+        files,
+        targetBranch,
+      }),
   };
 
   // Git API

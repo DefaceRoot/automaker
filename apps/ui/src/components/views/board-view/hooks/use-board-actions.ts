@@ -617,6 +617,7 @@ export function useBoardActions({
       filesChanged?: number;
       insertions?: number;
       deletions?: number;
+      changedFiles?: string[];
       error?: string;
     } | null> => {
       if (!currentProject) return null;
@@ -642,6 +643,7 @@ export function useBoardActions({
             filesChanged: result.filesChanged,
             insertions: result.insertions,
             deletions: result.deletions,
+            changedFiles: result.changedFiles,
           };
         } else if (result.success && !result.allConflictsResolved) {
           toast.warning('Unresolved conflicts', {
@@ -674,6 +676,60 @@ export function useBoardActions({
       }
     },
     [currentProject]
+  );
+
+  // Revert staged changes from a specific task
+  const handleRevertStagedChanges = useCallback(
+    async (feature: Feature): Promise<boolean> => {
+      if (!currentProject || !feature.stagedToTarget) {
+        toast.error('Cannot revert', {
+          description: 'No staged changes to revert.',
+        });
+        return false;
+      }
+
+      try {
+        const api = getElectronAPI();
+        if (!api?.worktree?.revertStaged) {
+          console.error('Revert Staged API not available');
+          toast.error('Revert not available', {
+            description: 'This feature is not available in the current version.',
+          });
+          return false;
+        }
+
+        const result = await api.worktree.revertStaged(
+          currentProject.path,
+          feature.stagedToTarget.stagedFiles,
+          feature.stagedToTarget.targetBranch
+        );
+
+        if (result.success) {
+          // Clear the stagedToTarget field from the feature
+          const updates = { stagedToTarget: undefined };
+          updateFeature(feature.id, updates);
+          persistFeatureUpdate(feature.id, updates);
+
+          toast.success('Changes reverted', {
+            description: `Reverted ${result.revertedFiles?.length || 0} file(s) from ${feature.stagedToTarget.targetBranch}`,
+          });
+          return true;
+        } else {
+          console.error('[Board] Failed to revert staged changes:', result.error);
+          toast.error('Failed to revert changes', {
+            description: result.error || 'An error occurred',
+          });
+          return false;
+        }
+      } catch (error) {
+        console.error('[Board] Error reverting staged changes:', error);
+        toast.error('Failed to revert changes', {
+          description: error instanceof Error ? error.message : 'An error occurred',
+        });
+        return false;
+      }
+    },
+    [currentProject, updateFeature, persistFeatureUpdate]
   );
 
   const handleCompleteFeature = useCallback(
@@ -910,6 +966,7 @@ export function useBoardActions({
     handleCommitFeature,
     handleMergeFeature,
     handleStageChanges,
+    handleRevertStagedChanges,
     handleCompleteFeature,
     handleUnarchiveFeature,
     handleViewOutput,

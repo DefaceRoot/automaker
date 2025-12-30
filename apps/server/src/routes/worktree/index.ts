@@ -33,6 +33,7 @@ import { createStartDevHandler } from './routes/start-dev.js';
 import { createStopDevHandler } from './routes/stop-dev.js';
 import { createListDevServersHandler } from './routes/list-dev-servers.js';
 import { createStageHandler } from './routes/stage.js';
+import { createRevertStagedHandler } from './routes/revert-staged.js';
 import type { SettingsService } from '../../services/settings-service.js';
 
 export function createWorktreeRoutes(settingsService?: SettingsService): Router {
@@ -60,6 +61,12 @@ export function createWorktreeRoutes(settingsService?: SettingsService): Router 
     validatePathParams('projectPath'),
     requireValidProject,
     createStageHandler()
+  );
+  router.post(
+    '/revert-staged',
+    validatePathParams('projectPath'),
+    requireValidProject,
+    createRevertStagedHandler()
   );
   router.post('/create', validatePathParams('projectPath'), createCreateHandler(settingsService));
   router.post('/delete', validatePathParams('projectPath', 'worktreePath'), createDeleteHandler());

@@ -396,6 +396,7 @@ export function BoardView() {
     handleCommitFeature,
     handleMergeFeature,
     handleStageChanges,
+    handleRevertStagedChanges,
     handleCompleteFeature,
     handleUnarchiveFeature,
     handleViewOutput,
@@ -456,6 +457,19 @@ export function BoardView() {
     async (feature: Feature) => {
       const result = await handleStageChanges(feature);
       if (result?.success && result.staged) {
+        // Save stagedToTarget info to the feature so we can revert later
+        const primaryBranch =
+          (currentProject?.path ? getPrimaryWorktreeBranch(currentProject.path) : null) || 'main';
+        const stagedToTargetUpdate = {
+          stagedToTarget: {
+            targetBranch: primaryBranch,
+            stagedFiles: result.changedFiles || [],
+            stagedAt: new Date().toISOString(),
+          },
+        };
+        updateFeature(feature.id, stagedToTargetUpdate);
+        persistFeatureUpdate(feature.id, stagedToTargetUpdate);
+
         setStagedChangesInfo({
           feature,
           suggestedMessage: result.suggestedMessage || `feat: merge feature/${feature.id}`,
@@ -467,7 +481,13 @@ export function BoardView() {
         setShowStagedChangesDialog(true);
       }
     },
-    [handleStageChanges]
+    [
+      handleStageChanges,
+      currentProject,
+      getPrimaryWorktreeBranch,
+      updateFeature,
+      persistFeatureUpdate,
+    ]
   );
 
   // Handler for aborting a staged merge
@@ -1124,6 +1144,7 @@ export function BoardView() {
               setShowAddDialog(true);
             }}
             onStageChanges={onStageChanges}
+            onRevert={handleRevertStagedChanges}
             featuresWithContext={featuresWithContext}
             runningAutoTasks={runningAutoTasks}
             shortcuts={shortcuts}

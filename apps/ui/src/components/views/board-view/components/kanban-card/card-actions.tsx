@@ -11,6 +11,7 @@ import {
   Wand2,
   Archive,
   GitMerge,
+  Undo2,
 } from 'lucide-react';
 
 interface CardActionsProps {
@@ -31,6 +32,7 @@ interface CardActionsProps {
   onViewPlan?: () => void;
   onApprovePlan?: () => void;
   onStageChanges?: () => void;
+  onRevert?: () => void;
 }
 
 export function CardActions({
@@ -51,6 +53,7 @@ export function CardActions({
   onViewPlan,
   onApprovePlan,
   onStageChanges,
+  onRevert,
 }: CardActionsProps) {
   return (
     <div className="flex flex-wrap gap-1.5 -mx-3 -mb-3 px-3 pb-3">
@@ -253,8 +256,25 @@ export function CardActions({
               <span className="truncate">Refine</span>
             </Button>
           )}
-          {/* Stage Changes button - show for features with worktrees */}
-          {hasWorktree && onStageChanges && (
+          {/* Revert button - show when changes are staged */}
+          {feature.stagedToTarget && onRevert && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 h-7 text-[11px] min-w-0 border-destructive/50 hover:bg-destructive/10 text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRevert();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              data-testid={`revert-staged-${feature.id}`}
+            >
+              <Undo2 className="w-3 h-3 mr-1 shrink-0" />
+              <span className="truncate">Revert</span>
+            </Button>
+          )}
+          {/* Stage Changes button - show for features with worktrees (hide when already staged) */}
+          {hasWorktree && onStageChanges && !feature.stagedToTarget && (
             <Button
               variant="outline"
               size="sm"

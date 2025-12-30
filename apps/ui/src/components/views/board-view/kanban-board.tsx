@@ -43,6 +43,7 @@ interface KanbanBoardProps {
   onApprovePlan: (feature: Feature) => void;
   onSpawnTask?: (feature: Feature) => void;
   onStageChanges?: (feature: Feature) => void;
+  onRevert?: (feature: Feature) => Promise<boolean>;
   featuresWithContext: Set<string>;
   runningAutoTasks: string[];
   shortcuts: ReturnType<typeof useKeyboardShortcutsConfig>;
@@ -78,6 +79,7 @@ export function KanbanBoard({
   onApprovePlan,
   onSpawnTask,
   onStageChanges,
+  onRevert,
   featuresWithContext,
   runningAutoTasks,
   shortcuts,
@@ -204,6 +206,7 @@ export function KanbanBoard({
                         onApprovePlan={() => onApprovePlan(feature)}
                         onSpawnTask={() => onSpawnTask?.(feature)}
                         onStageChanges={() => onStageChanges?.(feature)}
+                        onRevert={() => onRevert?.(feature)}
                         hasContext={featuresWithContext.has(feature.id)}
                         hasWorktree={!!feature.branchName}
                         isCurrentAutoTask={runningAutoTasks.includes(feature.id)}

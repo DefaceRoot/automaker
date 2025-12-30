@@ -27,6 +27,7 @@ interface KanbanCardProps {
   onApprovePlan?: () => void;
   onSpawnTask?: () => void;
   onStageChanges?: () => void;
+  onRevert?: () => void;
   hasContext?: boolean;
   hasWorktree?: boolean;
   isCurrentAutoTask?: boolean;
@@ -56,6 +57,7 @@ export const KanbanCard = memo(function KanbanCard({
   onApprovePlan,
   onSpawnTask,
   onStageChanges,
+  onRevert,
   hasContext,
   hasWorktree,
   isCurrentAutoTask,
@@ -186,6 +188,7 @@ export const KanbanCard = memo(function KanbanCard({
           onViewPlan={onViewPlan}
           onApprovePlan={onApprovePlan}
           onStageChanges={onStageChanges}
+          onRevert={onRevert}
         />
       </CardContent>
     </Card>
