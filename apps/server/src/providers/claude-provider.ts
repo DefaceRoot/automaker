@@ -13,6 +13,10 @@ import type {
   InstallationStatus,
   ModelDefinition,
 } from './types.js';
+import { withIdleTimeout, isStreamIdleTimeoutError } from '@automaker/utils';
+
+/** Idle timeout for SDK streaming - if no messages for this duration, consider it stalled */
+const STREAM_IDLE_TIMEOUT_MS = 120000; // 2 minutes
 
 export class ClaudeProvider extends BaseProvider {
   getName(): string {
@@ -117,11 +121,33 @@ export class ClaudeProvider extends BaseProvider {
     try {
       const stream = query({ prompt: promptPayload, options: sdkOptions });
 
+      // Wrap stream with idle timeout to prevent indefinite hangs
+      // This is especially important on Windows where ConPTY issues can cause stalls
+      const timedStream = withIdleTimeout(
+        stream as AsyncIterable<unknown>,
+        STREAM_IDLE_TIMEOUT_MS,
+        () =>
+          console.warn(
+            '[ClaudeProvider] Stream approaching idle timeout - no activity for 2 minutes'
+          )
+      );
+
       // Stream messages directly - they're already in the correct format
-      for await (const msg of stream) {
+      for await (const msg of timedStream) {
         yield msg as ProviderMessage;
       }
     } catch (error) {
+      // Handle idle timeout errors with a user-friendly message
+      if (isStreamIdleTimeoutError(error)) {
+        console.error('[ClaudeProvider] Stream timed out due to inactivity');
+        const timeoutError = new Error(
+          'Claude query timed out - no response received for 2 minutes. ' +
+            'The model may be overloaded or experiencing issues. Please try again.'
+        );
+        timeoutError.name = 'StreamTimeoutError';
+        throw timeoutError;
+      }
+
       // Check if this is a JSON parse error from the SDK receiving plain text from CLI
       if (error instanceof SyntaxError && error.message.includes('JSON')) {
         // Extract the problematic text from the error message if possible

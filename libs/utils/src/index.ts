@@ -54,3 +54,13 @@ export {
   type ContextFilesResult,
   type LoadContextFilesOptions,
 } from './context-loader.js';
+
+// Concurrency limiting
+export { ConcurrencyLimiter, getPlatformConcurrencyLimit } from './concurrency-limiter.js';
+
+// Stream timeout
+export {
+  withIdleTimeout,
+  StreamIdleTimeoutError,
+  isStreamIdleTimeoutError,
+} from './stream-timeout.js';

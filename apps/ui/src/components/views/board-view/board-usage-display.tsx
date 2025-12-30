@@ -190,7 +190,7 @@ export function BoardUsageDisplay() {
       return (
         <div
           className={cn(
-            'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border cursor-pointer hover:bg-secondary/80 transition-colors',
+            'flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-b from-secondary/40 to-secondary/10 border border-white/5 backdrop-blur-md cursor-pointer hover:from-secondary/50 hover:to-secondary/20 transition-all duration-300',
             loading && 'opacity-60'
           )}
           onClick={() => setOpen(true)}
@@ -198,57 +198,79 @@ export function BoardUsageDisplay() {
           <RefreshCw
             className={cn('w-3.5 h-3.5 text-muted-foreground', loading && 'animate-spin')}
           />
-          <span className="text-xs text-muted-foreground">Loading...</span>
+          <span className="text-xs font-medium text-muted-foreground">Loading...</span>
         </div>
       );
     }
 
     const sessionPercentage = claudeUsage.sessionPercentage ?? 0;
     const weeklyPercentage = claudeUsage.weeklyPercentage ?? 0;
-    const maxPercentage = Math.max(sessionPercentage, weeklyPercentage);
 
-    const getProgressBarColor = (percentage: number) => {
-      if (percentage >= 75) return 'bg-red-500';
-      if (percentage >= 50) return 'bg-yellow-500';
-      return 'bg-green-500';
+    const getProgressStyles = (percentage: number) => {
+      if (percentage >= 75) return 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)]';
+      if (percentage >= 50) return 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.4)]';
+      return 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]';
     };
 
-    const sessionColor = getProgressBarColor(sessionPercentage);
-    const weeklyColor = getProgressBarColor(weeklyPercentage);
+    const sessionStyles = getProgressStyles(sessionPercentage);
+    const weeklyStyles = getProgressStyles(weeklyPercentage);
 
     return (
       <div
         className={cn(
-          'flex items-center gap-3 px-3 py-1.5 rounded-lg bg-secondary border border-border cursor-pointer hover:bg-secondary/80 transition-colors',
-          isStale && 'opacity-70'
+          'group flex items-center gap-4 px-4 py-1.5 rounded-full bg-gradient-to-b from-secondary/40 to-secondary/10 border border-white/5 backdrop-blur-md shadow-sm cursor-pointer hover:from-secondary/50 hover:to-secondary/20 hover:border-white/10 hover:shadow-md transition-all duration-300',
+          isStale && 'opacity-70 grayscale'
         )}
         onClick={() => setOpen(true)}
       >
         {/* Session indicator */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[10px] text-muted-foreground whitespace-nowrap">Session</span>
-          <div className="h-1.5 w-12 bg-muted-foreground/20 rounded-full overflow-hidden">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 group-hover:text-muted-foreground transition-colors">
+            Session
+          </span>
+          <div className="relative h-1.5 w-14 bg-white/5 rounded-full overflow-hidden shadow-inner">
             <div
-              className={cn('h-full transition-all duration-500', sessionColor)}
+              className={cn(
+                'h-full rounded-full transition-all duration-700 ease-out',
+                sessionStyles
+              )}
               style={{ width: `${Math.min(sessionPercentage, 100)}%` }}
             />
           </div>
-          <span className="text-xs font-medium tabular-nums min-w-[2ch]">
-            {Math.round(sessionPercentage)}
+          <span
+            className={cn(
+              'text-xs font-mono font-medium tabular-nums min-w-[2.5ch]',
+              sessionPercentage > 90 ? 'text-rose-400' : 'text-foreground/90'
+            )}
+          >
+            {Math.round(sessionPercentage)}%
           </span>
         </div>
 
+        {/* Divider */}
+        <div className="w-px h-3 bg-white/10 group-hover:bg-white/20 transition-colors" />
+
         {/* Weekly indicator */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[10px] text-muted-foreground whitespace-nowrap">Weekly</span>
-          <div className="h-1.5 w-12 bg-muted-foreground/20 rounded-full overflow-hidden">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 group-hover:text-muted-foreground transition-colors">
+            Weekly
+          </span>
+          <div className="relative h-1.5 w-14 bg-white/5 rounded-full overflow-hidden shadow-inner">
             <div
-              className={cn('h-full transition-all duration-500', weeklyColor)}
+              className={cn(
+                'h-full rounded-full transition-all duration-700 ease-out',
+                weeklyStyles
+              )}
               style={{ width: `${Math.min(weeklyPercentage, 100)}%` }}
             />
           </div>
-          <span className="text-xs font-medium tabular-nums min-w-[2ch]">
-            {Math.round(weeklyPercentage)}
+          <span
+            className={cn(
+              'text-xs font-mono font-medium tabular-nums min-w-[2.5ch]',
+              weeklyPercentage > 90 ? 'text-rose-400' : 'text-foreground/90'
+            )}
+          >
+            {Math.round(weeklyPercentage)}%
           </span>
         </div>
       </div>

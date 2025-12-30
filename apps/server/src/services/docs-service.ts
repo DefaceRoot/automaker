@@ -10,7 +10,7 @@
 
 import path from 'path';
 import { resolveModelString, DEFAULT_MODELS } from '@automaker/model-resolver';
-import { classifyError } from '@automaker/utils';
+import { classifyError, ConcurrencyLimiter, getPlatformConcurrencyLimit } from '@automaker/utils';
 import { ProviderFactory } from '../providers/provider-factory.js';
 import type { ExecuteOptions } from '../providers/types.js';
 import * as secureFs from '../lib/secure-fs.js';
@@ -89,6 +89,20 @@ interface RunningGeneration {
   abortController: AbortController;
   startedAt: string;
   progress: Map<DocType, DocProgress>;
+}
+
+/**
+ * Check if an error is a Windows ConPTY-related error
+ */
+function isConPTYError(error: unknown): boolean {
+  const message = (error as Error)?.message || '';
+  return (
+    message.includes('AttachConsole') ||
+    message.includes('ConPTY') ||
+    message.includes('conpty') ||
+    // Process exit code 1 on Windows is often ConPTY related
+    (message.includes('exited with code 1') && process.platform === 'win32')
+  );
 }
 
 /**
@@ -382,41 +396,43 @@ export class DocsService {
     const commitHash = await getCurrentCommitHash(projectPath);
     const manifest = createManifest(model, mode, commitHash);
 
-    // Run all doc generations in parallel - each spawns its own Claude Code CLI process
-    // This gives each document its own context window for maximum quality
-    // Add a small stagger delay between starts to avoid overwhelming the API
-    const STAGGER_DELAY_MS = 500; // 500ms between each doc start
-    const allPromises = DOC_TYPES.map(
-      (docTypeInfo, index) =>
-        // Stagger the start of each generation to avoid rate limiting
-        new Promise<boolean>((resolve) => {
-          setTimeout(async () => {
-            try {
-              const result = await this.generateSingleDoc(
-                projectPath,
-                docsDir,
-                docTypeInfo,
-                model,
-                codebaseContext,
-                projectName,
-                abortController,
-                progress,
-                mode,
-                existingDocs.get(docTypeInfo.type),
-                gitChanges,
-                manifest,
-                providerEnv
-              );
-              resolve(result);
-            } catch (error) {
-              console.error(
-                `[DocsService] Unexpected error generating ${docTypeInfo.displayName}:`,
-                error
-              );
-              resolve(false);
-            }
-          }, index * STAGGER_DELAY_MS);
-        })
+    // Use platform-aware concurrency limiting
+    // Windows ConPTY has issues with multiple simultaneous console attachments
+    const maxConcurrent = getPlatformConcurrencyLimit();
+    const limiter = new ConcurrencyLimiter(maxConcurrent);
+
+    console.log(
+      `[DocsService] Starting parallel generation with concurrency limit: ${maxConcurrent} ` +
+        `(platform: ${process.platform})`
+    );
+
+    // Run all doc generations with concurrency limiting
+    const allPromises = DOC_TYPES.map((docTypeInfo) =>
+      limiter.run(async () => {
+        try {
+          return await this.generateSingleDoc(
+            projectPath,
+            docsDir,
+            docTypeInfo,
+            model,
+            codebaseContext,
+            projectName,
+            abortController,
+            progress,
+            mode,
+            existingDocs.get(docTypeInfo.type),
+            gitChanges,
+            manifest,
+            providerEnv
+          );
+        } catch (error) {
+          console.error(
+            `[DocsService] Unexpected error generating ${docTypeInfo.displayName}:`,
+            error
+          );
+          return false;
+        }
+      })
     );
 
     const results = await Promise.allSettled(allPromises);
@@ -701,15 +717,22 @@ export class DocsService {
           errorMessage.includes('CLI returned a message');
         const isIncompleteContent =
           errorMessage.includes('is incomplete') || errorMessage.includes('is too short');
+        const isConPTY = isConPTYError(error);
 
-        // Retry transient CLI errors and incomplete content (could be rate limiting)
-        if ((isTransientCLIError || isIncompleteContent) && attempt < maxRetries) {
+        // Retry transient CLI errors, incomplete content, and ConPTY errors
+        if ((isTransientCLIError || isIncompleteContent || isConPTY) && attempt < maxRetries) {
+          const errorType = isConPTY
+            ? 'ConPTY error'
+            : isTransientCLIError
+              ? 'CLI error'
+              : 'incomplete content';
+          // Use longer delay for ConPTY errors to let Windows resources settle
+          const delayMs = isConPTY ? 5000 * (attempt + 1) : 2000 * (attempt + 1);
           console.log(
-            `[DocsService] Retryable error for ${displayName} (${isTransientCLIError ? 'CLI error' : 'incomplete content'}), ` +
-              `will retry after delay (attempt ${attempt + 1}/${maxRetries + 1})...`
+            `[DocsService] Retryable error for ${displayName} (${errorType}), ` +
+              `will retry after ${delayMs}ms delay (attempt ${attempt + 1}/${maxRetries + 1})...`
           );
-          // Wait a bit before retrying (exponential backoff)
-          await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
 

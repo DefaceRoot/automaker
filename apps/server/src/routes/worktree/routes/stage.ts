@@ -1,22 +1,24 @@
 /**
  * POST /stage endpoint - Stage worktree changes to base branch (no commit)
  *
- * This endpoint stages changes from a feature branch to the main branch without committing,
- * allowing the user to review changes before committing manually.
+ * This endpoint copies changed files from a feature worktree to the main branch
+ * and stages them, allowing the user to review changes before committing manually.
  *
  * Flow:
- * 1. Save current branch state
- * 2. Fetch latest from remote
- * 3. Attempt git merge --no-commit
- * 4. Detect and resolve conflicts (auto + AI)
- * 5. Generate suggested commit message
- * 6. Return staged status with diff summary
+ * 1. Validate inputs and resolve worktree path
+ * 2. Check main branch is clean (no uncommitted changes)
+ * 3. Ensure we're on target branch
+ * 4. Get list of changed files between branches
+ * 5. Copy/delete files from worktree to main
+ * 6. Stage the changes with git add
+ * 7. Return success with file list for revert tracking
  *
  * Note: Git repository validation is handled by requireValidProject middleware
  */
 
 import type { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs/promises';
 import {
   execAsync,
   execEnv,
@@ -25,14 +27,6 @@ import {
   isValidBranchName,
   resolveWorktreePath,
 } from '../common.js';
-import {
-  ConflictResolutionService,
-  type ConflictInfo,
-} from '../../../services/conflict-resolution-service.js';
-import { FeatureLoader } from '../../../services/feature-loader.js';
-
-const conflictResolver = new ConflictResolutionService();
-const featureLoader = new FeatureLoader();
 
 interface StageRequest {
   projectPath: string;
@@ -43,22 +37,81 @@ interface StageRequest {
 interface StageResponse {
   success: boolean;
   staged?: boolean;
-  conflicts?: ConflictInfo[];
-  allConflictsResolved?: boolean;
-  suggestedMessage?: string;
-  diffSummary?: string;
+  changedFiles?: string[]; // List of file paths that were staged
   filesChanged?: number;
   insertions?: number;
   deletions?: number;
-  changedFiles?: string[]; // List of file paths that were staged
+  diffSummary?: string;
   error?: string;
+}
+
+interface FileChange {
+  status: 'A' | 'M' | 'D' | 'R';
+  path?: string;
+  oldPath?: string;
+  newPath?: string;
+}
+
+/**
+ * Copy a file from worktree to main project
+ */
+async function copyFile(
+  worktreePath: string,
+  projectPath: string,
+  filePath: string
+): Promise<void> {
+  const srcPath = path.join(worktreePath, filePath);
+  const destPath = path.join(projectPath, filePath);
+
+  // Ensure parent directory exists
+  await fs.mkdir(path.dirname(destPath), { recursive: true });
+
+  // Copy the file
+  await fs.copyFile(srcPath, destPath);
+}
+
+/**
+ * Delete a file from main project
+ */
+async function deleteFile(projectPath: string, filePath: string): Promise<void> {
+  const targetPath = path.join(projectPath, filePath);
+  try {
+    await fs.unlink(targetPath);
+  } catch {
+    // File might not exist, that's fine
+  }
+}
+
+/**
+ * Parse git diff --name-status output into FileChange objects
+ */
+function parseNameStatus(output: string): FileChange[] {
+  return output
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('\t');
+      const status = parts[0];
+
+      // Renamed files have format: R100\toldPath\tnewPath
+      if (status.startsWith('R')) {
+        return {
+          status: 'R' as const,
+          oldPath: parts[1],
+          newPath: parts[2],
+        };
+      }
+
+      return {
+        status: status as 'A' | 'M' | 'D',
+        path: parts[1],
+      };
+    });
 }
 
 export function createStageHandler() {
   return async (req: Request, res: Response): Promise<void> => {
-    let originalBranch: string | null = null;
-    let mergeStarted = false;
-
     try {
       const { projectPath, featureId, targetBranch = 'main' } = req.body as StageRequest;
 
@@ -81,7 +134,7 @@ export function createStageHandler() {
         return;
       }
 
-      const { branchName } = worktreeInfo;
+      const { path: worktreePath, branchName } = worktreeInfo;
 
       // Validate branch names
       if (!isValidBranchName(branchName) || !isValidBranchName(targetBranch)) {
@@ -92,42 +145,32 @@ export function createStageHandler() {
         return;
       }
 
-      console.log(`[Stage] Staging ${branchName} to ${targetBranch} in ${projectPath}`);
+      console.log(
+        `[Stage] Staging ${branchName} to ${targetBranch} in ${projectPath} (worktree: ${worktreePath})`
+      );
 
-      // Load feature for commit message generation
-      const features = await featureLoader.getAll(projectPath);
-      const feature = features.find((f: { id: string }) => f.id === featureId);
-      const featureDescription = feature?.description || feature?.title || `Feature ${featureId}`;
+      // Step 1: Check main is clean (CRITICAL - fail if dirty)
+      const { stdout: statusOutput } = await execAsync('git status --porcelain', {
+        cwd: projectPath,
+        env: execEnv,
+      });
 
-      // Step 1: Get current branch
+      if (statusOutput.trim()) {
+        res.status(400).json({
+          success: false,
+          error: `Cannot stage changes: uncommitted changes on ${targetBranch}. Please commit or stash them first.`,
+        } as StageResponse);
+        return;
+      }
+
+      // Step 2: Get current branch and ensure we're on target
       const { stdout: currentBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', {
         cwd: projectPath,
         env: execEnv,
       });
-      originalBranch = currentBranchRaw.trim();
-      console.log(`[Stage] Current branch: ${originalBranch}`);
+      const currentBranch = currentBranchRaw.trim();
 
-      // Step 2: Ensure we're on the target branch
-      if (originalBranch !== targetBranch) {
-        // Check for uncommitted changes
-        try {
-          const { stdout: statusOutput } = await execAsync('git status --porcelain', {
-            cwd: projectPath,
-            env: execEnv,
-          });
-          if (statusOutput.trim()) {
-            res.status(400).json({
-              success: false,
-              error: `Cannot switch branches: uncommitted changes in ${originalBranch}. Please commit or stash them first.`,
-            } as StageResponse);
-            return;
-          }
-        } catch (error) {
-          // Continue if status check fails
-          console.warn('[Stage] Could not check git status:', getErrorMessage(error));
-        }
-
-        // Checkout target branch
+      if (currentBranch !== targetBranch) {
         try {
           await execAsync(`git checkout ${targetBranch}`, {
             cwd: projectPath,
@@ -143,167 +186,125 @@ export function createStageHandler() {
         }
       }
 
-      // Step 3: Fetch latest from remote (non-blocking, continue even if fails)
-      try {
-        await execAsync('git fetch origin', {
-          cwd: projectPath,
-          env: execEnv,
-          timeout: 30000, // 30 second timeout
-        });
-        console.log('[Stage] Fetched from origin');
-      } catch (error) {
-        console.warn('[Stage] Could not fetch from origin:', getErrorMessage(error));
-        // Continue - we can still stage local changes
+      // Step 3: Get list of changed files between branches
+      const { stdout: diffOutput } = await execAsync(
+        `git diff --name-status ${targetBranch}..${branchName}`,
+        { cwd: projectPath, env: execEnv }
+      );
+
+      const changes = parseNameStatus(diffOutput);
+
+      if (changes.length === 0) {
+        res.json({
+          success: true,
+          staged: true,
+          changedFiles: [],
+          filesChanged: 0,
+          insertions: 0,
+          deletions: 0,
+          diffSummary: 'No changes to stage',
+        } as StageResponse);
+        return;
       }
 
-      // Step 4: Verify the feature branch exists
-      try {
-        await execAsync(`git rev-parse --verify ${branchName}`, {
-          cwd: projectPath,
-          env: execEnv,
-        });
-      } catch {
-        // Try with remote prefix
+      console.log(`[Stage] Found ${changes.length} changed files`);
+
+      // Step 4: Copy/delete files from worktree to main
+      const errors: string[] = [];
+      const stagedFiles: string[] = [];
+
+      for (const change of changes) {
         try {
-          await execAsync(`git rev-parse --verify origin/${branchName}`, {
-            cwd: projectPath,
-            env: execEnv,
-          });
-          // Fetch it locally
-          await execAsync(`git fetch origin ${branchName}:${branchName}`, {
-            cwd: projectPath,
-            env: execEnv,
-          });
-        } catch {
-          res.status(400).json({
-            success: false,
-            error: `Branch ${branchName} does not exist`,
-          } as StageResponse);
-          return;
+          switch (change.status) {
+            case 'A':
+            case 'M':
+              // Added or Modified - copy from worktree
+              if (change.path) {
+                await copyFile(worktreePath, projectPath, change.path);
+                stagedFiles.push(change.path);
+              }
+              break;
+
+            case 'D':
+              // Deleted - remove from main
+              if (change.path) {
+                await deleteFile(projectPath, change.path);
+                stagedFiles.push(change.path);
+              }
+              break;
+
+            case 'R':
+              // Renamed - delete old path, copy new path
+              if (change.oldPath) {
+                await deleteFile(projectPath, change.oldPath);
+                stagedFiles.push(change.oldPath);
+              }
+              if (change.newPath) {
+                await copyFile(worktreePath, projectPath, change.newPath);
+                stagedFiles.push(change.newPath);
+              }
+              break;
+          }
+        } catch (error) {
+          const filePath = change.path || change.newPath || change.oldPath || 'unknown';
+          errors.push(`Failed to process ${filePath}: ${getErrorMessage(error)}`);
+          console.warn(`[Stage] Error processing file ${filePath}:`, error);
         }
       }
 
-      // Step 5: Attempt merge with --no-commit
-      mergeStarted = true;
+      if (stagedFiles.length === 0) {
+        res.status(500).json({
+          success: false,
+          error: `Failed to copy files: ${errors.join(', ')}`,
+        } as StageResponse);
+        return;
+      }
+
+      // Step 5: Stage all changed files
+      const escapedFiles = stagedFiles.map((f) => `"${f.replace(/"/g, '\\"')}"`);
       try {
-        await execAsync(`git merge --no-commit --no-ff ${branchName}`, {
+        await execAsync(`git add ${escapedFiles.join(' ')}`, {
           cwd: projectPath,
           env: execEnv,
         });
-        console.log('[Stage] Merge successful (no conflicts)');
+        console.log(`[Stage] Staged ${stagedFiles.length} files`);
       } catch (error) {
-        const errorMsg = getErrorMessage(error);
-
-        // Check if it's a conflict error
-        if (errorMsg.includes('CONFLICT') || errorMsg.includes('Automatic merge failed')) {
-          console.log('[Stage] Merge conflicts detected, attempting resolution...');
-
-          // Step 6: Resolve conflicts
-          const resolutionResult = await conflictResolver.resolveConflicts(
-            projectPath,
-            featureDescription
-          );
-
-          if (!resolutionResult.success) {
-            // Abort the merge
-            await abortMerge(projectPath, originalBranch);
-            res.status(500).json({
-              success: false,
-              error: `Conflict resolution failed: ${resolutionResult.error}`,
-              conflicts: resolutionResult.conflicts,
-            } as StageResponse);
-            return;
-          }
-
-          if (!resolutionResult.allResolved) {
-            // Some conflicts couldn't be resolved
-            // Don't abort - let the user see what was resolved and what wasn't
-            const response: StageResponse = {
-              success: true,
-              staged: false,
-              conflicts: resolutionResult.conflicts,
-              allConflictsResolved: false,
-              error: 'Some conflicts could not be automatically resolved. Please resolve manually.',
-            };
-            res.json(response);
-            return;
-          }
-
-          console.log('[Stage] All conflicts resolved');
-        } else {
-          // Non-conflict error
-          await abortMerge(projectPath, originalBranch);
-          res.status(500).json({
-            success: false,
-            error: `Merge failed: ${errorMsg}`,
-          } as StageResponse);
-          return;
-        }
+        res.status(500).json({
+          success: false,
+          error: `Failed to stage files: ${getErrorMessage(error)}`,
+        } as StageResponse);
+        return;
       }
 
-      // Step 7: Get diff summary
+      // Step 6: Get diff summary
       const diffSummary = await getDiffSummary(projectPath);
-
-      // Step 8: Generate suggested commit message
-      const suggestedMessage = generateCommitMessage(feature);
 
       const response: StageResponse = {
         success: true,
         staged: true,
-        conflicts: [],
-        allConflictsResolved: true,
-        suggestedMessage,
-        diffSummary: diffSummary.summary,
+        changedFiles: stagedFiles,
         filesChanged: diffSummary.filesChanged,
         insertions: diffSummary.insertions,
         deletions: diffSummary.deletions,
-        changedFiles: diffSummary.changedFiles,
+        diffSummary: diffSummary.summary,
       };
 
+      if (errors.length > 0) {
+        console.warn(`[Stage] Completed with ${errors.length} errors:`, errors);
+      }
+
       console.log(
-        `[Stage] Successfully staged changes: ${diffSummary.summary} (${diffSummary.changedFiles.length} files)`
+        `[Stage] Successfully staged changes: ${diffSummary.summary} (${stagedFiles.length} files)`
       );
       res.json(response);
     } catch (error) {
       logError(error, 'Stage worktree changes failed');
-
-      // Attempt to abort merge and restore original branch if we started merging
-      if (mergeStarted && originalBranch) {
-        try {
-          const projectPath = (req.body as StageRequest).projectPath;
-          await abortMerge(projectPath, originalBranch);
-        } catch {
-          // Best effort cleanup
-        }
-      }
-
       res.status(500).json({
         success: false,
         error: getErrorMessage(error),
       } as StageResponse);
     }
   };
-}
-
-/**
- * Abort merge and restore original branch
- */
-async function abortMerge(projectPath: string, originalBranch: string | null): Promise<void> {
-  try {
-    await execAsync('git merge --abort', { cwd: projectPath, env: execEnv });
-    console.log('[Stage] Merge aborted');
-  } catch {
-    // Merge might not have been started, ignore
-  }
-
-  if (originalBranch) {
-    try {
-      await execAsync(`git checkout ${originalBranch}`, { cwd: projectPath, env: execEnv });
-      console.log(`[Stage] Restored to ${originalBranch}`);
-    } catch {
-      // Best effort
-    }
-  }
 }
 
 /**
@@ -314,10 +315,9 @@ async function getDiffSummary(projectPath: string): Promise<{
   filesChanged: number;
   insertions: number;
   deletions: number;
-  changedFiles: string[];
 }> {
   try {
-    // Get stat for staged changes (from the merge)
+    // Get stat for staged changes
     const { stdout } = await execAsync('git diff --cached --stat', {
       cwd: projectPath,
       env: execEnv,
@@ -332,15 +332,11 @@ async function getDiffSummary(projectPath: string): Promise<{
     const insertMatch = summaryLine.match(/(\d+)\s+insertions?\(\+\)/);
     const deleteMatch = summaryLine.match(/(\d+)\s+deletions?\(-\)/);
 
-    // Get the list of changed file paths
-    const changedFiles = await getChangedFiles(projectPath);
-
     return {
       summary: summaryLine.trim() || 'No changes staged',
       filesChanged: filesMatch ? parseInt(filesMatch[1], 10) : 0,
       insertions: insertMatch ? parseInt(insertMatch[1], 10) : 0,
       deletions: deleteMatch ? parseInt(deleteMatch[1], 10) : 0,
-      changedFiles,
     };
   } catch {
     return {
@@ -348,87 +344,6 @@ async function getDiffSummary(projectPath: string): Promise<{
       filesChanged: 0,
       insertions: 0,
       deletions: 0,
-      changedFiles: [],
     };
   }
-}
-
-/**
- * Get list of changed file paths from staged changes
- */
-async function getChangedFiles(projectPath: string): Promise<string[]> {
-  try {
-    const { stdout } = await execAsync('git diff --cached --name-only', {
-      cwd: projectPath,
-      env: execEnv,
-    });
-
-    return stdout
-      .trim()
-      .split('\n')
-      .filter((file) => file.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Generate suggested commit message from feature
- */
-function generateCommitMessage(
-  feature: { title?: string; description?: string; category?: string; id: string } | undefined
-): string {
-  if (!feature) {
-    return 'feat: merge feature changes';
-  }
-
-  const category = feature.category?.toLowerCase() || 'feat';
-  const prefix = getCategoryPrefix(category);
-
-  // Use title if available, otherwise first line of description
-  let summary = feature.title || '';
-  if (!summary && feature.description) {
-    summary = feature.description.split('\n')[0].substring(0, 72);
-  }
-  if (!summary) {
-    summary = `merge feature/${feature.id}`;
-  }
-
-  // Clean up summary
-  summary = summary
-    .replace(/^#+\s*/, '') // Remove markdown headers
-    .replace(/^\*\*.*?\*\*:?\s*/, '') // Remove bold markers
-    .trim();
-
-  // Ensure proper casing
-  if (summary.length > 0) {
-    summary = summary.charAt(0).toLowerCase() + summary.slice(1);
-  }
-
-  return `${prefix}: ${summary}`;
-}
-
-/**
- * Map feature category to commit prefix
- */
-function getCategoryPrefix(category: string): string {
-  const prefixMap: Record<string, string> = {
-    feature: 'feat',
-    enhancement: 'feat',
-    bugfix: 'fix',
-    bug: 'fix',
-    fix: 'fix',
-    refactor: 'refactor',
-    test: 'test',
-    tests: 'test',
-    docs: 'docs',
-    documentation: 'docs',
-    style: 'style',
-    chore: 'chore',
-    maintenance: 'chore',
-    perf: 'perf',
-    performance: 'perf',
-  };
-
-  return prefixMap[category] || 'feat';
 }

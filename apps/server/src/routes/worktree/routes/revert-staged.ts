@@ -1,13 +1,13 @@
 /**
  * POST /revert-staged endpoint - Revert staged changes from a specific task
  *
- * This endpoint reverts changes that were staged from a feature branch to the target branch.
- * It only reverts the specific files that were staged by the task, preserving other changes.
+ * This endpoint reverts changes that were staged from a feature worktree.
+ * It unstages the files and restores them to their original state on the target branch.
  *
  * Flow:
- * 1. Ensure we're on the target branch
- * 2. Unstage the specific files
- * 3. Restore the files to their pre-merge state
+ * 1. Validate inputs
+ * 2. Verify we're on target branch
+ * 3. Unstage and restore each file
  *
  * Note: Git repository validation is handled by requireValidProject middleware
  */
@@ -24,6 +24,7 @@ interface RevertStagedRequest {
 interface RevertStagedResponse {
   success: boolean;
   revertedFiles?: string[];
+  errors?: string[];
   error?: string;
 }
 
@@ -32,18 +33,11 @@ export function createRevertStagedHandler() {
     try {
       const { projectPath, files, targetBranch = 'main' } = req.body as RevertStagedRequest;
 
-      if (!projectPath) {
+      // Validate inputs
+      if (!projectPath || !files || files.length === 0) {
         res.status(400).json({
           success: false,
-          error: 'projectPath is required',
-        } as RevertStagedResponse);
-        return;
-      }
-
-      if (!files || files.length === 0) {
-        res.status(400).json({
-          success: false,
-          error: 'files array is required and must not be empty',
+          error: 'projectPath and files are required',
         } as RevertStagedResponse);
         return;
       }
@@ -61,7 +55,7 @@ export function createRevertStagedHandler() {
         `[RevertStaged] Reverting ${files.length} files from ${targetBranch} in ${projectPath}`
       );
 
-      // Step 1: Verify we're on the target branch
+      // Verify we're on the target branch
       const { stdout: currentBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', {
         cwd: projectPath,
         env: execEnv,
@@ -76,109 +70,53 @@ export function createRevertStagedHandler() {
         return;
       }
 
-      // Step 2: Check if we're in a merge state
-      let inMergeState = false;
-      try {
-        await execAsync('git rev-parse MERGE_HEAD', {
-          cwd: projectPath,
-          env: execEnv,
-        });
-        inMergeState = true;
-      } catch {
-        // Not in merge state, which is fine
-      }
-
-      // Step 3: Revert the files
       const revertedFiles: string[] = [];
+      const errors: string[] = [];
 
-      if (inMergeState) {
-        // If in merge state, abort the merge entirely
-        // This is simpler and cleaner than trying to selectively revert
-        console.log('[RevertStaged] In merge state, aborting merge');
+      for (const file of files) {
+        const escapedFile = `"${file.replace(/"/g, '\\"')}"`;
+
         try {
-          await execAsync('git merge --abort', {
+          // Step 1: Unstage the file
+          await execAsync(`git restore --staged ${escapedFile}`, {
             cwd: projectPath,
             env: execEnv,
           });
-          // All files from the merge are now reverted
-          revertedFiles.push(...files);
-          console.log('[RevertStaged] Merge aborted successfully');
-        } catch (error) {
-          res.status(500).json({
-            success: false,
-            error: `Failed to abort merge: ${getErrorMessage(error)}`,
-          } as RevertStagedResponse);
-          return;
-        }
-      } else {
-        // Not in merge state - need to unstage and restore specific files
-        // This handles the case where the merge was completed but not committed
-
-        // Escape file paths for shell command
-        const escapedFiles = files.map((f) => `"${f.replace(/"/g, '\\"')}"`);
-
-        // Step 3a: Unstage the files (git restore --staged)
-        try {
-          const unstageCmd = `git restore --staged ${escapedFiles.join(' ')}`;
-          await execAsync(unstageCmd, {
-            cwd: projectPath,
-            env: execEnv,
-          });
-          console.log(`[RevertStaged] Unstaged ${files.length} files`);
-        } catch (error) {
-          // Files might not be staged, continue anyway
-          console.warn('[RevertStaged] Could not unstage files:', getErrorMessage(error));
+        } catch {
+          // File might not be staged, continue
         }
 
-        // Step 3b: Restore the files to their previous state (git restore)
         try {
-          const restoreCmd = `git restore ${escapedFiles.join(' ')}`;
-          await execAsync(restoreCmd, {
+          // Step 2: Restore file to HEAD state
+          await execAsync(`git restore ${escapedFile}`, {
             cwd: projectPath,
             env: execEnv,
           });
-          revertedFiles.push(...files);
-          console.log(`[RevertStaged] Restored ${files.length} files`);
-        } catch (error) {
-          // Some files might be new (created by the merge), need to remove them
-          console.warn('[RevertStaged] Could not restore some files:', getErrorMessage(error));
-
-          // Try to handle each file individually
-          for (const file of files) {
-            try {
-              // Try to restore first
-              await execAsync(`git restore "${file.replace(/"/g, '\\"')}"`, {
-                cwd: projectPath,
-                env: execEnv,
-              });
-              revertedFiles.push(file);
-            } catch {
-              // If restore fails, the file might be untracked (new file from merge)
-              // Try to remove it
-              try {
-                await execAsync(`git clean -f "${file.replace(/"/g, '\\"')}"`, {
-                  cwd: projectPath,
-                  env: execEnv,
-                });
-                revertedFiles.push(file);
-              } catch (cleanError) {
-                console.warn(
-                  `[RevertStaged] Could not revert file ${file}:`,
-                  getErrorMessage(cleanError)
-                );
-              }
-            }
+          revertedFiles.push(file);
+        } catch {
+          // File might be new (not in HEAD), try to remove it
+          try {
+            await execAsync(`git clean -f ${escapedFile}`, {
+              cwd: projectPath,
+              env: execEnv,
+            });
+            revertedFiles.push(file);
+          } catch (cleanError) {
+            errors.push(`Could not revert ${file}: ${getErrorMessage(cleanError)}`);
           }
         }
       }
 
-      const response: RevertStagedResponse = {
+      console.log(`[RevertStaged] Successfully reverted ${revertedFiles.length} files`);
+      if (errors.length > 0) {
+        console.warn(`[RevertStaged] Errors:`, errors);
+      }
+
+      res.json({
         success: true,
         revertedFiles,
-      };
-
-      console.log(`[RevertStaged] Successfully reverted ${revertedFiles.length} files`);
-      res.json(response);
+        errors: errors.length > 0 ? errors : undefined,
+      } as RevertStagedResponse);
     } catch (error) {
       logError(error, 'Revert staged changes failed');
       res.status(500).json({
