@@ -247,6 +247,11 @@ export function McpSettingsPanel() {
   const [isSavingJson, setIsSavingJson] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Filter out servers with missing/invalid transport config (defensive against corrupted data)
+  const validServers = mcpServers.filter(
+    (server): server is McpServerConfig => !!server.transport?.type
+  );
+
   const handleOpenAddDialog = () => {
     setEditingServer(null);
     setFormData(DEFAULT_FORM_DATA);
@@ -484,12 +489,12 @@ export function McpSettingsPanel() {
   };
 
   const handleTestAllServers = async () => {
-    if (mcpServers.length === 0) {
+    if (validServers.length === 0) {
       toast.info('No MCP servers configured');
       return;
     }
 
-    toast.info(`Testing ${mcpServers.length} servers...`);
+    toast.info(`Testing ${validServers.length} servers...`);
 
     try {
       const api = getElectronAPI();
@@ -683,7 +688,7 @@ export function McpSettingsPanel() {
               <FileJson className="w-4 h-4" />
               Import/Export
             </Button>
-            {mcpServers.length > 0 && (
+            {validServers.length > 0 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -704,7 +709,7 @@ export function McpSettingsPanel() {
 
       {/* Server List */}
       <div className="p-6">
-        {mcpServers.length === 0 ? (
+        {validServers.length === 0 ? (
           <div className="text-center py-8">
             <Server className="w-12 h-12 mx-auto text-muted-foreground/40 mb-3" />
             <p className="text-muted-foreground">No MCP servers configured</p>
@@ -714,7 +719,7 @@ export function McpSettingsPanel() {
           </div>
         ) : (
           <div className="space-y-3">
-            {mcpServers.map((server) => (
+            {validServers.map((server) => (
               <div
                 key={server.id}
                 className={cn(

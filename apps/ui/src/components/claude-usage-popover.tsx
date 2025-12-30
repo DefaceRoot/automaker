@@ -81,8 +81,10 @@ export function ClaudeUsagePopover() {
     if (!api.claude?.onUsageUpdate) return;
 
     const unsubscribe = api.claude.onUsageUpdate((usage) => {
-      // Real-time update received - update store
-      setClaudeUsage(usage);
+      // Real-time update received - update store (only if not an error)
+      if (!('error' in usage)) {
+        setClaudeUsage(usage);
+      }
     });
 
     return () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,9 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { GitMerge, GitCommit, Loader2, ExternalLink, XCircle, FileCode } from 'lucide-react';
+import { GitMerge, Loader2, ExternalLink, XCircle, FileCode, CheckCircle2 } from 'lucide-react';
 import { getElectronAPI } from '@/lib/electron';
 import { toast } from 'sonner';
 import type { Feature } from '@/store/app-store';
@@ -42,49 +40,43 @@ export function StagedChangesDialog({
   onCommitted,
   onAbort,
 }: StagedChangesDialogProps) {
-  const [commitMessage, setCommitMessage] = useState(suggestedMessage);
-  const [isCommitting, setIsCommitting] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
   const [isAborting, setIsAborting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Update commit message when suggestedMessage changes
-  useEffect(() => {
-    setCommitMessage(suggestedMessage);
-  }, [suggestedMessage]);
+  const handleConfirmMerge = async () => {
+    if (!feature) return;
 
-  const handleCommit = async () => {
-    if (!feature || !commitMessage.trim()) return;
-
-    setIsCommitting(true);
+    setIsMerging(true);
     setError(null);
 
     try {
       const api = getElectronAPI();
       if (!api?.worktree?.commit) {
-        setError('Commit API not available');
+        setError('Merge API not available');
         return;
       }
 
-      // Commit in the main project path (changes are already staged there)
-      const result = await api.worktree.commit(projectPath, commitMessage);
+      // Commit the staged merge with the suggested message
+      const result = await api.worktree.commit(projectPath, suggestedMessage);
 
       if (result.success && result.result?.committed) {
-        toast.success('Changes committed successfully', {
-          description: `Commit ${result.result.commitHash} on ${result.result.branch}`,
+        toast.success('Changes merged successfully', {
+          description: `Merged to ${result.result.branch}`,
         });
         onCommitted();
         onOpenChange(false);
       } else if (result.success && !result.result?.committed) {
-        toast.info('No changes to commit', {
+        toast.info('No changes to merge', {
           description: result.result?.message || 'All changes may have been unstaged',
         });
       } else {
-        setError(result.error || 'Failed to commit changes');
+        setError(result.error || 'Failed to merge changes');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to commit');
+      setError(err instanceof Error ? err.message : 'Failed to merge');
     } finally {
-      setIsCommitting(false);
+      setIsMerging(false);
     }
   };
 
@@ -95,12 +87,12 @@ export function StagedChangesDialog({
     try {
       // The abort is handled by calling git merge --abort in the parent
       onAbort();
-      toast.info('Merge aborted', {
+      toast.info('Merge cancelled', {
         description: 'Staged changes have been discarded',
       });
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to abort');
+      setError(err instanceof Error ? err.message : 'Failed to cancel');
     } finally {
       setIsAborting(false);
     }
@@ -129,77 +121,66 @@ export function StagedChangesDialog({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.metaKey && !isCommitting && commitMessage.trim()) {
-      handleCommit();
-    }
-  };
-
   if (!feature) return null;
 
-  const isLoading = isCommitting || isAborting;
+  const isLoading = isMerging || isAborting;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitMerge className="w-5 h-5 text-purple-500" />
-            Changes Staged Successfully
+            Review Changes
           </DialogTitle>
           <DialogDescription>
-            Changes from{' '}
-            <code className="font-mono bg-muted px-1 rounded">feature/{feature.id}</code> have been
-            staged. Review and commit when ready.
+            Changes from the worktree have been staged to the target branch. Review the summary
+            below and confirm to complete the merge.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           {/* Diff Summary */}
           <div className="rounded-lg border bg-muted/50 p-4">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-3">
               <FileCode className="w-4 h-4 text-muted-foreground" />
               <span className="text-sm font-medium">Changes Summary</span>
             </div>
-            <div className="font-mono text-sm text-muted-foreground">
-              <span className="text-foreground">{filesChanged}</span> file
-              {filesChanged !== 1 ? 's' : ''} changed
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Files changed</span>
+                <span className="font-mono text-sm font-medium">{filesChanged}</span>
+              </div>
               {insertions > 0 && (
-                <>
-                  , <span className="text-green-500">+{insertions}</span>
-                </>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Additions</span>
+                  <span className="font-mono text-sm font-medium text-green-500">
+                    +{insertions}
+                  </span>
+                </div>
               )}
               {deletions > 0 && (
-                <>
-                  , <span className="text-red-500">-{deletions}</span>
-                </>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Deletions</span>
+                  <span className="font-mono text-sm font-medium text-red-500">-{deletions}</span>
+                </div>
               )}
             </div>
             {diffSummary && diffSummary !== 'No changes staged' && (
-              <p className="text-xs text-muted-foreground mt-1">{diffSummary}</p>
+              <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
+                {diffSummary}
+              </p>
             )}
           </div>
 
-          {/* Commit Message */}
-          <div className="grid gap-2">
-            <Label htmlFor="commit-message">Commit Message</Label>
-            <Textarea
-              id="commit-message"
-              placeholder="Describe your changes..."
-              value={commitMessage}
-              onChange={(e) => {
-                setCommitMessage(e.target.value);
-                setError(null);
-              }}
-              onKeyDown={handleKeyDown}
-              className="min-h-[100px] font-mono text-sm"
-              autoFocus
-            />
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </div>
+          {error && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+              <p className="text-sm text-destructive">{error}</p>
+            </div>
+          )}
 
           <p className="text-xs text-muted-foreground">
-            Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Cmd+Enter</kbd> to commit
+            Click "Review in Editor" to inspect the changes before confirming.
           </p>
         </div>
 
@@ -213,12 +194,12 @@ export function StagedChangesDialog({
             {isAborting ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Aborting...
+                Cancelling...
               </>
             ) : (
               <>
                 <XCircle className="w-4 h-4 mr-2" />
-                Cancel Merge
+                Cancel
               </>
             )}
           </Button>
@@ -228,16 +209,16 @@ export function StagedChangesDialog({
             Review in Editor
           </Button>
 
-          <Button onClick={handleCommit} disabled={isLoading || !commitMessage.trim()}>
-            {isCommitting ? (
+          <Button onClick={handleConfirmMerge} disabled={isLoading}>
+            {isMerging ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Committing...
+                Merging...
               </>
             ) : (
               <>
-                <GitCommit className="w-4 h-4 mr-2" />
-                Commit Changes
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Confirm Merge
               </>
             )}
           </Button>

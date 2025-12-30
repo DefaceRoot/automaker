@@ -17,7 +17,14 @@
 
 import type { Request, Response } from 'express';
 import path from 'path';
-import { execAsync, execEnv, getErrorMessage, logError, isValidBranchName } from '../common.js';
+import {
+  execAsync,
+  execEnv,
+  getErrorMessage,
+  logError,
+  isValidBranchName,
+  resolveWorktreePath,
+} from '../common.js';
 import {
   ConflictResolutionService,
   type ConflictInfo,
@@ -62,8 +69,18 @@ export function createStageHandler() {
         return;
       }
 
-      // Construct branch name from featureId
-      const branchName = `feature/${featureId}`;
+      // Resolve worktree path and branch name from feature
+      const worktreeInfo = await resolveWorktreePath(projectPath, featureId);
+      if (!worktreeInfo) {
+        res.status(400).json({
+          success: false,
+          error:
+            'Feature does not have a worktree or branch name. Please ensure the feature has been started.',
+        } as StageResponse);
+        return;
+      }
+
+      const { branchName } = worktreeInfo;
 
       // Validate branch names
       if (!isValidBranchName(branchName) || !isValidBranchName(targetBranch)) {

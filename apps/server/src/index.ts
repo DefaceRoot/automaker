@@ -47,7 +47,7 @@ import { SettingsService } from './services/settings-service.js';
 import { MCPServerService } from './services/mcp-server-service.js';
 import { createSpecRegenerationRoutes } from './routes/app-spec/index.js';
 import { createClaudeRoutes } from './routes/claude/index.js';
-import { ClaudeUsageService } from './services/claude-usage-service.js';
+import { ClaudeUsagePtyService } from './services/claude-usage-pty-service.js';
 import { DocsService } from './services/docs-service.js';
 import { createGitHubRoutes } from './routes/github/index.js';
 import { createContextRoutes } from './routes/context/index.js';
@@ -127,7 +127,7 @@ const mcpServerService = new MCPServerService(events);
 const agentService = new AgentService(DATA_DIR, events, settingsService);
 const featureLoader = new FeatureLoader();
 const autoModeService = new AutoModeService(events, settingsService);
-const claudeUsageService = new ClaudeUsageService(events);
+const claudeUsageService = new ClaudeUsagePtyService(events);
 const docsService = new DocsService(events, settingsService);
 
 // Initialize services

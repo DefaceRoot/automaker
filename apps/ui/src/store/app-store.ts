@@ -913,6 +913,11 @@ export interface AppActions {
     } | null
   ) => void;
 
+  // Claude Usage Tracking actions
+  setClaudeRefreshInterval: (interval: number) => void;
+  setClaudeUsageLastUpdated: (timestamp: number) => void;
+  setClaudeUsage: (usage: ClaudeUsage | null) => void;
+
   // Documentation Generation actions
   setDocsGenerating: (projectPath: string, generating: boolean) => void;
   setDocProgress: (
