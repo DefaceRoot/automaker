@@ -79,7 +79,7 @@ describe('mcp-config.ts', () => {
     });
 
     describe('stdio config conversion', () => {
-      it('should convert stdio config to SDK format without type field', () => {
+      it('should convert stdio config to SDK format with explicit type field', () => {
         const configs = [
           createStdioConfig('fs', 'Filesystem', true, 'npx', ['-y', '@mcp/server-fs']),
         ];
@@ -87,11 +87,13 @@ describe('mcp-config.ts', () => {
 
         expect(result).toEqual({
           fs: {
+            type: 'stdio',
             command: 'npx',
             args: ['-y', '@mcp/server-fs'],
           },
         });
-        expect(result['fs']).not.toHaveProperty('type');
+        // Explicitly include type: 'stdio' for better cross-platform compatibility
+        expect(result['fs']).toHaveProperty('type', 'stdio');
       });
 
       it('should include env when present and non-empty', () => {
@@ -104,6 +106,7 @@ describe('mcp-config.ts', () => {
         const result = convertMcpConfigsToSdkFormat(configs, ['server']);
 
         expect(result['server']).toEqual({
+          type: 'stdio',
           command: 'node',
           args: ['server.js'],
           env: { DEBUG: 'true', NODE_ENV: 'production' },
@@ -239,12 +242,13 @@ describe('mcp-config.ts', () => {
         ];
         const result = convertMcpConfigsToSdkFormat(configs, ['local-fs', 'cloud-api']);
 
-        // Stdio config should not have type field
+        // Stdio config should have explicit type field for cross-platform compatibility
         expect(result['local-fs']).toEqual({
+          type: 'stdio',
           command: 'npx',
           args: ['-y', '@mcp/server-fs'],
         });
-        expect(result['local-fs']).not.toHaveProperty('type');
+        expect(result['local-fs']).toHaveProperty('type', 'stdio');
 
         // HTTP config should have type field
         expect(result['cloud-api']).toEqual({

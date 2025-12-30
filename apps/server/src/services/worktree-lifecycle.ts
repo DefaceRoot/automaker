@@ -265,7 +265,12 @@ export class WorktreeLifecycleService {
    * Determine the worktree category from a feature
    */
   private getWorktreeCategory(feature: Feature): WorktreeCategory {
-    // First, check if feature.category maps to a valid worktree category
+    // Use explicit worktreeCategory if provided by user (from UI category selector)
+    if (feature.worktreeCategory) {
+      return feature.worktreeCategory;
+    }
+
+    // Fallback: check if feature.category maps to a valid worktree category
     const featureCategory = feature.category?.toLowerCase() || '';
 
     if (featureCategory in CATEGORY_MAP) {

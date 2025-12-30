@@ -2,7 +2,7 @@
  * Feature types for AutoMaker feature management
  */
 
-import type { PlanningMode } from './settings.js';
+import type { PlanningMode, WorktreeCategory } from './settings.js';
 
 export interface FeatureImagePath {
   id: string;
@@ -40,6 +40,7 @@ export interface Feature {
   textFilePaths?: FeatureTextFilePath[];
   // Branch info - worktree path is derived at runtime from branchName
   branchName?: string; // Name of the feature branch (undefined = use current worktree)
+  worktreeCategory?: WorktreeCategory; // Category for worktree folder (feature/bugfix/hotfix/refactor/chore/docs)
   skipTests?: boolean;
   thinkingLevel?: string;
   planningMode?: PlanningMode;

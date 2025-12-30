@@ -41,13 +41,12 @@ export function createCreateHandler(
 
       // Check if worktrees are enabled in global settings
       let worktreeCreated = false;
-      let worktreeError: string | undefined;
       if (settingsService) {
-        try {
-          const globalSettings = await settingsService.getGlobalSettings();
-          if (globalSettings.useWorktrees) {
-            logger.info(`Worktrees enabled, creating worktree for feature ${created.id}`);
+        const globalSettings = await settingsService.getGlobalSettings();
+        if (globalSettings.useWorktrees) {
+          logger.info(`Worktrees enabled, creating worktree for feature ${created.id}`);
 
+          try {
             // Create worktree for the new feature
             const worktreeResult = await worktreeLifecycleService.createWorktreeForTask({
               projectPath,
@@ -61,12 +60,18 @@ export function createCreateHandler(
             // Update created feature with branch name (the lifecycle service already updates it, but we want the response to include it)
             created.branchName = worktreeResult.branchName;
             worktreeCreated = true;
+          } catch (worktreeError) {
+            // Worktree creation failed - rollback by deleting the created feature
+            logger.error('Worktree creation failed, rolling back feature creation:', worktreeError);
+            try {
+              await featureLoader.delete(projectPath, created.id);
+              logger.info(`Rolled back feature ${created.id} after worktree creation failure`);
+            } catch (deleteError) {
+              logger.error('Failed to rollback feature after worktree error:', deleteError);
+            }
+            // Re-throw the original worktree error to fail the entire operation
+            throw new Error(`Failed to create worktree: ${getErrorMessage(worktreeError)}`);
           }
-        } catch (error) {
-          // Log but don't fail - worktree creation is optional
-          // Surface the error in the response so the UI can show a warning
-          worktreeError = getErrorMessage(error);
-          logger.error('Failed to create worktree for feature:', error);
         }
       }
 
@@ -74,7 +79,6 @@ export function createCreateHandler(
         success: true,
         feature: created,
         worktreeCreated,
-        worktreeError,
       });
     } catch (error) {
       logError(error, 'Create feature failed');

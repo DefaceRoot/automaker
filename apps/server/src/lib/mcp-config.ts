@@ -29,6 +29,10 @@ import type { McpSdkConfig, StdioMcpSdkConfig, HttpMcpSdkConfig } from '../provi
  */
 function convertStdioConfig(config: StdioMcpConfig): StdioMcpSdkConfig {
   const sdkConfig: StdioMcpSdkConfig = {
+    // Explicitly include type: 'stdio' to ensure proper transport detection
+    // While the SDK documentation says 'type' is optional for stdio, including it
+    // may help with edge cases and cross-platform compatibility
+    type: 'stdio',
     command: config.command,
     args: config.args,
   };

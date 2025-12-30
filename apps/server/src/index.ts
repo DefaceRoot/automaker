@@ -91,6 +91,9 @@ const app = express();
 
 // Middleware
 // Custom colored logger showing only endpoint and status code (configurable via ENABLE_REQUEST_LOGGING env var)
+console.log(
+  `[Server] Request logging: ${ENABLE_REQUEST_LOGGING ? 'enabled' : 'disabled'} (ENABLE_REQUEST_LOGGING=${process.env.ENABLE_REQUEST_LOGGING ?? 'not set'})`
+);
 if (ENABLE_REQUEST_LOGGING) {
   morgan.token('status-colored', (req, res) => {
     const status = res.statusCode;

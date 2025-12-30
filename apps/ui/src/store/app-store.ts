@@ -181,7 +181,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   // Navigation
   board: 'K',
   agent: 'A',
-  spec: 'F',
+  spec: 'U',
   context: 'C',
   settings: 'S',
   profiles: 'M',
@@ -2826,7 +2826,7 @@ export const useAppStore = create<AppState & AppActions>()(
     }),
     {
       name: 'automaker-storage',
-      version: 3, // Increment when making breaking changes to persisted state
+      version: 5, // Increment when making breaking changes to persisted state
       // Custom merge function to properly restore terminal settings on every load
       // The default shallow merge doesn't work because we persist terminalSettings
       // separately from terminalState (to avoid persisting session data like tabs)
@@ -2905,6 +2905,34 @@ export const useAppStore = create<AppState & AppActions>()(
               planningModel:
                 profile.planningModel === 'glm-4.7' ? 'GLM-4.7' : profile.planningModel,
             }));
+          }
+        }
+
+        // Migration from version 3 to version 4:
+        // - Change spec shortcut from "F" to "U"
+        if (version <= 3) {
+          if (state.keyboardShortcuts?.spec === 'F') {
+            state.keyboardShortcuts = {
+              ...DEFAULT_KEYBOARD_SHORTCUTS,
+              ...state.keyboardShortcuts,
+              spec: 'U',
+            };
+          }
+        }
+
+        // Migration from version 4 to version 5:
+        // - Change spec shortcut from "D" to "U" (D is now used for docs)
+        // - Add docs shortcut as "D"
+        if (version <= 4) {
+          if (state.keyboardShortcuts) {
+            // If spec is 'D', change it to 'U' to free up 'D' for docs
+            if (state.keyboardShortcuts.spec === 'D') {
+              state.keyboardShortcuts.spec = 'U';
+            }
+            // Add docs shortcut if it doesn't exist
+            if (!state.keyboardShortcuts.docs) {
+              state.keyboardShortcuts.docs = 'D';
+            }
           }
         }
 

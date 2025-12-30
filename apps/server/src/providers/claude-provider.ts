@@ -45,6 +45,24 @@ export class ClaudeProvider extends BaseProvider {
     if (mcpServers && Object.keys(mcpServers).length > 0) {
       const serverNames = Object.keys(mcpServers);
       console.log(`[ClaudeProvider] Loading MCP servers: [${serverNames.join(', ')}]`);
+
+      // Log detailed config for each server to help debug connection issues
+      for (const [name, config] of Object.entries(mcpServers)) {
+        const configType = 'command' in config ? 'stdio' : 'http';
+        if (configType === 'stdio') {
+          const stdioConfig = config as {
+            command: string;
+            args?: string[];
+            env?: Record<string, string>;
+          };
+          console.log(
+            `[ClaudeProvider] MCP server "${name}" (stdio): command="${stdioConfig.command}", args=${JSON.stringify(stdioConfig.args || [])}`
+          );
+        } else {
+          const httpConfig = config as { type: 'http'; url: string };
+          console.log(`[ClaudeProvider] MCP server "${name}" (http): url="${httpConfig.url}"`);
+        }
+      }
     } else {
       console.log('[ClaudeProvider] No MCP servers configured for this query');
     }
