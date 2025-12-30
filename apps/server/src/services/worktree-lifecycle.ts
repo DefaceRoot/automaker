@@ -16,6 +16,7 @@ import { WorktreeManager, type CreateWorktreeResult } from './worktree-manager.j
 import { FeatureLoader, type Feature } from './feature-loader.js';
 import type { WorktreeCategory } from '@automaker/types';
 import { getFeatureDir } from '@automaker/platform';
+import { generateTitleFromDescription } from '../lib/title-generator.js';
 
 const logger = createLogger('WorktreeLifecycle');
 
@@ -87,7 +88,7 @@ export class WorktreeLifecycleService {
     logger.info(`Using category (after getWorktreeCategory): ${category}`);
 
     // Generate a title for the worktree branch name
-    const title = this.generateWorktreeTitle(feature);
+    const title = await this.getOrGenerateTitle(feature);
     logger.info(`Generated title: ${title}`);
 
     // If worktreeCategory is explicitly set, create a NEW categorized worktree
@@ -317,21 +318,32 @@ export class WorktreeLifecycleService {
   }
 
   /**
-   * Generate a title for the worktree branch name from feature
+   * Get or generate a title for the worktree branch name.
+   * If feature has no title, generates one using AI (synchronously waits).
+   * Falls back to truncated description if AI generation fails.
    */
-  private generateWorktreeTitle(feature: Feature): string {
-    // Prefer title over description
+  private async getOrGenerateTitle(feature: Feature): Promise<string> {
+    // Use existing title if available (user-provided or previously AI-generated)
     if (feature.title && feature.title.trim()) {
       return feature.title.trim();
     }
 
-    // Use description if no title
+    // Try to generate title using AI
     if (feature.description && feature.description.trim()) {
-      // Take first 100 chars of description
+      try {
+        const generatedTitle = await generateTitleFromDescription(feature.description);
+        if (generatedTitle) {
+          return generatedTitle;
+        }
+      } catch (error) {
+        logger.warn('Failed to generate title, falling back to description', error);
+      }
+
+      // Fallback: truncated description
       return feature.description.trim().substring(0, 100);
     }
 
-    // Fallback to feature ID
+    // Last resort fallback
     return `task-${feature.id.substring(0, 8)}`;
   }
 

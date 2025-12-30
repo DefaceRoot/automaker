@@ -52,6 +52,7 @@ interface KanbanBoardProps {
   suggestionsCount: number;
   onArchiveAllVerified: () => void;
   onDeleteAllBacklog: () => void;
+  currentViewBranch?: string; // The branch currently being viewed (for target branch display)
 }
 
 export function KanbanBoard({
@@ -88,6 +89,7 @@ export function KanbanBoard({
   suggestionsCount,
   onArchiveAllVerified,
   onDeleteAllBacklog,
+  currentViewBranch,
 }: KanbanBoardProps) {
   // Use responsive column widths based on window size
   // containerStyle handles centering and ensures columns fit without horizontal scroll in Electron
@@ -215,6 +217,7 @@ export function KanbanBoard({
                         glassmorphism={backgroundSettings.cardGlassmorphism}
                         cardBorderEnabled={backgroundSettings.cardBorderEnabled}
                         cardBorderOpacity={backgroundSettings.cardBorderOpacity}
+                        currentViewBranch={currentViewBranch}
                       />
                     );
                   })}

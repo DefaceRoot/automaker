@@ -1,8 +1,18 @@
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ImageIcon, Archive, Minimize2, Square, Maximize2, Columns3, Network } from 'lucide-react';
+import {
+  ImageIcon,
+  Archive,
+  Minimize2,
+  Square,
+  Maximize2,
+  Columns3,
+  Network,
+  GitMerge,
+  GitBranch,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { BoardViewMode } from '@/store/app-store';
+import { BoardViewMode, KanbanFilterMode } from '@/store/app-store';
 
 interface BoardControlsProps {
   isMounted: boolean;
@@ -13,6 +23,9 @@ interface BoardControlsProps {
   onDetailLevelChange: (level: 'minimal' | 'standard' | 'detailed') => void;
   boardViewMode: BoardViewMode;
   onBoardViewModeChange: (mode: BoardViewMode) => void;
+  kanbanFilterMode: KanbanFilterMode;
+  onKanbanFilterModeChange: (mode: KanbanFilterMode) => void;
+  useWorktrees: boolean; // Only show filter toggle when worktrees are enabled
 }
 
 export function BoardControls({
@@ -24,6 +37,9 @@ export function BoardControls({
   onDetailLevelChange,
   boardViewMode,
   onBoardViewModeChange,
+  kanbanFilterMode,
+  onKanbanFilterModeChange,
+  useWorktrees,
 }: BoardControlsProps) {
   if (!isMounted) return null;
 
@@ -74,6 +90,53 @@ export function BoardControls({
             </TooltipContent>
           </Tooltip>
         </div>
+
+        {/* Filter Mode Toggle - Target Branch / Working Branch (only when worktrees enabled) */}
+        {useWorktrees && (
+          <div
+            className="flex items-center rounded-lg bg-secondary border border-border"
+            data-testid="filter-mode-toggle"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => onKanbanFilterModeChange('target')}
+                  className={cn(
+                    'p-2 rounded-l-lg transition-colors',
+                    kanbanFilterMode === 'target'
+                      ? 'bg-brand-500/20 text-brand-500'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  )}
+                  data-testid="filter-mode-target"
+                >
+                  <GitMerge className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Filter by Target Branch (where code merges)</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => onKanbanFilterModeChange('working')}
+                  className={cn(
+                    'p-2 rounded-r-lg transition-colors',
+                    kanbanFilterMode === 'working'
+                      ? 'bg-brand-500/20 text-brand-500'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  )}
+                  data-testid="filter-mode-working"
+                >
+                  <GitBranch className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Filter by Working Branch (where code is developed)</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
 
         {/* Board Background Button */}
         <Tooltip>

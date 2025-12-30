@@ -99,7 +99,7 @@ export function useBoardActions({
       model: AgentModel;
       planningModel?: AgentModel;
       thinkingLevel: ThinkingLevel;
-      branchName: string;
+      targetBranch: string; // Branch this work will merge into
       priority: number;
       planningMode: PlanningMode;
       requirePlanApproval: boolean;
@@ -110,8 +110,8 @@ export function useBoardActions({
       worktreeCategory?: WorktreeCategory;
     }) => {
       // Empty string means "unassigned" (show only on primary worktree) - convert to undefined
-      // Non-empty string is the actual branch name (for non-primary worktrees)
-      const finalBranchName = featureData.branchName || undefined;
+      // Non-empty string is the actual branch name (target branch for filtering)
+      const finalTargetBranch = featureData.targetBranch || undefined;
 
       // Note: Worktree creation is now handled automatically by the server during feature creation
       // The server uses worktreeCategory to create properly named worktrees like feature/001-title
@@ -124,7 +124,8 @@ export function useBoardActions({
         title: featureData.title,
         titleGenerating: needsTitleGeneration,
         status: 'backlog' as const,
-        branchName: finalBranchName,
+        targetBranch: finalTargetBranch, // Branch this work will merge into
+        // branchName will be set by server when worktree is created
         dependencies: featureData.dependencies || [],
         worktreeCategory: featureData.worktreeCategory,
       };
@@ -190,7 +191,7 @@ export function useBoardActions({
         thinkingLevel: ThinkingLevel;
         imagePaths: DescriptionImagePath[];
         textFilePaths: DescriptionTextFilePath[];
-        branchName: string;
+        targetBranch: string; // Branch this work will merge into
         priority: number;
         planningMode?: PlanningMode;
         requirePlanApproval?: boolean;
@@ -200,7 +201,7 @@ export function useBoardActions({
         worktreeCategory?: WorktreeCategory;
       }
     ) => {
-      const finalBranchName = updates.branchName || undefined;
+      const finalTargetBranch = updates.targetBranch || undefined;
 
       // Note: Worktree creation is handled by the server during feature creation
       // Updates to existing features don't create new worktrees
@@ -208,7 +209,7 @@ export function useBoardActions({
       const finalUpdates = {
         ...updates,
         title: updates.title,
-        branchName: finalBranchName,
+        targetBranch: finalTargetBranch, // Branch this work will merge into
       };
 
       updateFeature(featureId, finalUpdates);
@@ -823,28 +824,44 @@ export function useBoardActions({
   );
 
   const handleStartNextFeatures = useCallback(async () => {
-    // Filter backlog features by the currently selected worktree branch
+    // Filter backlog features by the currently selected worktree's target branch
     // This ensures "G" only starts features from the filtered list
     const primaryBranch = projectPath ? getPrimaryWorktreeBranch(projectPath) : null;
+    const effectivePrimaryBranch = primaryBranch || 'main';
+
+    // Helper to get effective target branch (backward compatibility)
+    const getEffectiveTargetBranch = (feature: Feature): string => {
+      if (feature.targetBranch) return feature.targetBranch;
+      const branchName = feature.branchName || '';
+      const worktreePatterns = ['feature/', 'bugfix/', 'hotfix/', 'refactor/', 'chore/', 'docs/'];
+      if (worktreePatterns.some((pattern) => branchName.startsWith(pattern))) {
+        return effectivePrimaryBranch;
+      }
+      if (!branchName || branchName === effectivePrimaryBranch) {
+        return effectivePrimaryBranch;
+      }
+      return branchName;
+    };
+
     const backlogFeatures = features.filter((f) => {
       if (f.status !== 'backlog') return false;
 
-      // Determine the feature's branch (default to primary branch if not set)
-      const featureBranch = f.branchName || primaryBranch || 'main';
+      // Determine the feature's target branch (what it will merge into)
+      const featureTargetBranch = getEffectiveTargetBranch(f);
 
       // If no worktree is selected (currentWorktreeBranch is null or matches primary),
-      // show features with no branch or primary branch
+      // show features targeting the primary branch
       if (
         !currentWorktreeBranch ||
         (projectPath && isPrimaryWorktreeBranch(projectPath, currentWorktreeBranch))
       ) {
-        return (
-          !f.branchName || (projectPath && isPrimaryWorktreeBranch(projectPath, featureBranch))
-        );
+        return projectPath
+          ? isPrimaryWorktreeBranch(projectPath, featureTargetBranch)
+          : featureTargetBranch === effectivePrimaryBranch;
       }
 
-      // Otherwise, only show features matching the selected worktree branch
-      return featureBranch === currentWorktreeBranch;
+      // Otherwise, only show features targeting the selected worktree branch
+      return featureTargetBranch === currentWorktreeBranch;
     });
 
     const availableSlots = useAppStore.getState().maxConcurrency - runningAutoTasks.length;

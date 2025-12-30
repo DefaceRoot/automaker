@@ -52,6 +52,8 @@ export type KanbanCardDetailLevel = 'minimal' | 'standard' | 'detailed';
 
 export type BoardViewMode = 'kanban' | 'graph';
 
+export type KanbanFilterMode = 'target' | 'working'; // 'target' = filter by targetBranch, 'working' = filter by branchName
+
 export interface ApiKeys {
   anthropic: string;
   google: string;
@@ -470,6 +472,7 @@ export interface AppState {
   // Kanban Card Display Settings
   kanbanCardDetailLevel: KanbanCardDetailLevel; // Level of detail shown on kanban cards
   boardViewMode: BoardViewMode; // Whether to show kanban or dependency graph view
+  kanbanFilterMode: KanbanFilterMode; // Filter by targetBranch or branchName (default: target)
 
   // Feature Default Settings
   defaultSkipTests: boolean; // Default value for skip tests when creating new features
@@ -755,6 +758,7 @@ export interface AppActions {
   // Kanban Card Settings actions
   setKanbanCardDetailLevel: (level: KanbanCardDetailLevel) => void;
   setBoardViewMode: (mode: BoardViewMode) => void;
+  setKanbanFilterMode: (mode: KanbanFilterMode) => void;
 
   // Feature Default Settings actions
   setDefaultSkipTests: (skip: boolean) => void;
@@ -1009,6 +1013,7 @@ const initialState: AppState = {
   maxConcurrency: 3, // Default to 3 concurrent agents
   kanbanCardDetailLevel: 'standard', // Default to standard detail level
   boardViewMode: 'kanban', // Default to kanban view
+  kanbanFilterMode: 'target', // Default to filtering by targetBranch
   defaultSkipTests: true, // Default to manual verification (tests disabled)
   enableDependencyBlocking: true, // Default to enabled (show dependency blocking UI)
   useWorktrees: false, // Default to disabled (worktree feature is experimental)
@@ -1586,6 +1591,7 @@ export const useAppStore = create<AppState & AppActions>()(
       // Kanban Card Settings actions
       setKanbanCardDetailLevel: (level) => set({ kanbanCardDetailLevel: level }),
       setBoardViewMode: (mode) => set({ boardViewMode: mode }),
+      setKanbanFilterMode: (mode) => set({ kanbanFilterMode: mode }),
 
       // Feature Default Settings actions
       setDefaultSkipTests: (skip) => set({ defaultSkipTests: skip }),

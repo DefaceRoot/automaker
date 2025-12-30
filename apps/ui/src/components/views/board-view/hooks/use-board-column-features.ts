@@ -1,8 +1,58 @@
 import { useMemo, useCallback } from 'react';
-import { Feature, useAppStore } from '@/store/app-store';
+import { Feature, useAppStore, KanbanFilterMode } from '@/store/app-store';
 import { resolveDependencies, getBlockingDependencies } from '@automaker/dependency-resolver';
 
 type ColumnId = Feature['status'];
+
+/**
+ * Get the effective target branch for a feature.
+ * Handles backward compatibility for features created before targetBranch was added.
+ *
+ * @param feature - The feature to get the target branch for
+ * @param primaryBranch - The primary branch name (e.g., 'main' or 'master')
+ * @returns The effective target branch for filtering
+ */
+function getEffectiveTargetBranch(feature: Feature, primaryBranch: string): string | undefined {
+  // Explicit targetBranch takes precedence
+  if (feature.targetBranch) {
+    return String(feature.targetBranch);
+  }
+
+  // Infer from branchName patterns (for backward compatibility)
+  const branchName = feature.branchName ? String(feature.branchName) : '';
+  const worktreePatterns = ['feature/', 'bugfix/', 'hotfix/', 'refactor/', 'chore/', 'docs/'];
+
+  // If branchName matches worktree patterns, it's targeting the primary branch
+  if (worktreePatterns.some((pattern) => branchName.startsWith(pattern))) {
+    return primaryBranch;
+  }
+
+  // Empty or matches primary branch = targeting primary
+  if (!branchName || branchName === primaryBranch) {
+    return primaryBranch;
+  }
+
+  // Default: use branchName as target (legacy behavior)
+  return branchName;
+}
+
+/**
+ * Get the effective working branch for a feature.
+ * Used when filtering by working branch (kanbanFilterMode === 'working').
+ *
+ * @param feature - The feature to get the working branch for
+ * @param primaryBranch - The primary branch name (e.g., 'main' or 'master')
+ * @returns The effective working branch for filtering
+ */
+function getEffectiveWorkingBranch(feature: Feature, primaryBranch: string): string | undefined {
+  // Use explicit branchName if set
+  if (feature.branchName) {
+    return String(feature.branchName);
+  }
+
+  // No working branch assigned - default to primary branch
+  return primaryBranch;
+}
 
 interface UseBoardColumnFeaturesProps {
   features: Feature[];
@@ -21,6 +71,9 @@ export function useBoardColumnFeatures({
   currentWorktreeBranch,
   projectPath,
 }: UseBoardColumnFeaturesProps) {
+  // Get kanbanFilterMode from store for reactive updates
+  const kanbanFilterMode = useAppStore((state) => state.kanbanFilterMode);
+
   // Memoize column features to prevent unnecessary re-renders
   const columnFeaturesMap = useMemo(() => {
     const map: Record<ColumnId, Feature[]> = {
@@ -51,54 +104,60 @@ export function useBoardColumnFeatures({
     // In that case, we can't do branch-based filtering, so we'll handle it specially below
     const effectiveBranch = currentWorktreeBranch;
 
+    // Get primary branch for migration helper
+    const primaryBranch = projectPath
+      ? useAppStore.getState().getPrimaryWorktreeBranch(projectPath) || 'main'
+      : 'main';
+
     filteredFeatures.forEach((f) => {
       // If feature has a running agent, always show it in "in_progress"
       const isRunning = runningAutoTasks.includes(f.id);
 
-      // Check if feature matches the current worktree by branchName
-      // Features without branchName are considered unassigned (show only on primary worktree)
-      const featureBranch = f.branchName;
+      // Get the branch to filter by based on the filter mode
+      const filterBranch =
+        kanbanFilterMode === 'working'
+          ? getEffectiveWorkingBranch(f, primaryBranch)
+          : getEffectiveTargetBranch(f, primaryBranch);
 
-      let matchesWorktree: boolean;
-      if (!featureBranch) {
-        // No branch assigned - show only on primary worktree
+      let matchesView: boolean;
+      if (!filterBranch) {
+        // No branch assigned - show only on primary worktree view
         const isViewingPrimary = currentWorktreePath === null;
-        matchesWorktree = isViewingPrimary;
+        matchesView = isViewingPrimary;
       } else if (effectiveBranch === null) {
-        // We're viewing main but branch hasn't been initialized yet
-        // (worktrees disabled or haven't loaded yet).
-        // Show features assigned to primary worktree's branch.
-        matchesWorktree = projectPath
-          ? useAppStore.getState().isPrimaryWorktreeBranch(projectPath, featureBranch)
+        // Viewing main but branch hasn't been initialized yet
+        // Check if feature is on primary branch
+        matchesView = projectPath
+          ? useAppStore.getState().isPrimaryWorktreeBranch(projectPath, filterBranch)
           : false;
       } else {
-        // Match by branch name
-        matchesWorktree = featureBranch === effectiveBranch;
+        // Match by the selected filter branch
+        matchesView = filterBranch === effectiveBranch;
       }
 
       if (isRunning) {
-        // Only show running tasks if they match the current worktree
-        if (matchesWorktree) {
+        // Only show running tasks if they match the current view
+        if (matchesView) {
           map.in_progress.push(f);
         }
       } else {
         // Otherwise, use the feature's status (fallback to backlog for unknown statuses)
         const status = f.status as ColumnId;
 
-        // Filter all items by worktree, including backlog
-        // This ensures backlog items with a branch assigned only show in that branch
+        // Filter all items by target branch, including backlog
+        // This ensures backlog items targeting a branch only show when viewing that target
         if (status === 'backlog') {
-          if (matchesWorktree) {
+          if (matchesView) {
             map.backlog.push(f);
           }
         } else if (map[status]) {
-          // Only show if matches current worktree or has no worktree assigned
-          if (matchesWorktree) {
+          // Only show if matches current view's target branch
+          if (matchesView) {
             map[status].push(f);
           }
         } else {
           // Unknown status, default to backlog
-          if (matchesWorktree) {
+          if (matchesView) {
             map.backlog.push(f);
           }
         }
@@ -143,6 +202,7 @@ export function useBoardColumnFeatures({
     currentWorktreePath,
     currentWorktreeBranch,
     projectPath,
+    kanbanFilterMode,
   ]);
 
   const getColumnFeatures = useCallback(

@@ -39,7 +39,8 @@ export interface Feature {
   imagePaths?: Array<string | FeatureImagePath | { path: string; [key: string]: unknown }>;
   textFilePaths?: FeatureTextFilePath[];
   // Branch info - worktree path is derived at runtime from branchName
-  branchName?: string; // Name of the feature branch (undefined = use current worktree)
+  branchName?: string; // Name of the working branch (e.g., 'feature/001-my-task')
+  targetBranch?: string; // Branch this work will merge into (e.g., 'main')
   worktreeCategory?: WorktreeCategory; // Category for worktree folder (feature/bugfix/hotfix/refactor/chore/docs)
   skipTests?: boolean;
   thinkingLevel?: string;

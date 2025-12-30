@@ -38,6 +38,7 @@ interface KanbanCardProps {
   glassmorphism?: boolean;
   cardBorderEnabled?: boolean;
   cardBorderOpacity?: number;
+  currentViewBranch?: string; // The branch currently being viewed (for target branch display)
 }
 
 export const KanbanCard = memo(function KanbanCard({
@@ -68,6 +69,7 @@ export const KanbanCard = memo(function KanbanCard({
   glassmorphism = true,
   cardBorderEnabled = true,
   cardBorderOpacity = 100,
+  currentViewBranch,
 }: KanbanCardProps) {
   const { useWorktrees } = useAppStore();
 
@@ -159,7 +161,11 @@ export const KanbanCard = memo(function KanbanCard({
 
       <CardContent className="px-3 pt-0 pb-0">
         {/* Content Sections */}
-        <CardContentSections feature={feature} useWorktrees={useWorktrees} />
+        <CardContentSections
+          feature={feature}
+          useWorktrees={useWorktrees}
+          currentViewBranch={currentViewBranch}
+        />
 
         {/* Agent Info Panel */}
         <AgentInfoPanel

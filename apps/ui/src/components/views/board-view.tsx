@@ -90,6 +90,8 @@ export function BoardView() {
     enableDependencyBlocking,
     isPrimaryWorktreeBranch,
     getPrimaryWorktreeBranch,
+    kanbanFilterMode,
+    setKanbanFilterMode,
   } = useAppStore();
   const shortcuts = useKeyboardShortcutsConfig();
   const {
@@ -494,7 +496,7 @@ export function BoardView() {
         skipTests: defaultSkipTests,
         model: 'opus' as const,
         thinkingLevel: 'none' as const,
-        branchName: worktree.branch,
+        targetBranch: worktree.branch, // Target the worktree's branch
         priority: 1, // High priority for PR feedback
         planningMode: 'skip' as const,
         requirePlanApproval: false,
@@ -536,7 +538,7 @@ export function BoardView() {
         skipTests: defaultSkipTests,
         model: 'opus' as const,
         thinkingLevel: 'none' as const,
-        branchName: worktree.branch,
+        targetBranch: worktree.branch, // Target the worktree's branch
         priority: 1, // High priority for conflict resolution
         planningMode: 'skip' as const,
         requirePlanApproval: false,
@@ -697,28 +699,47 @@ export function BoardView() {
         // This logic mirrors use-board-column-features.ts for consistency
         // Use ref to get the latest features without causing effect re-runs
         const currentFeatures = hookFeaturesRef.current;
+
+        // Get primary branch for target branch inference
+        const primaryBranchForFilter =
+          (currentProject.path ? getPrimaryWorktreeBranch(currentProject.path) : null) || 'main';
+
+        // Helper to get effective target branch (for backward compatibility)
+        const getEffectiveTargetBranch = (f: Feature): string | undefined => {
+          if (f.targetBranch) return f.targetBranch;
+
+          // Infer from branchName patterns
+          const branchName = f.branchName || '';
+          const patterns = ['feature/', 'bugfix/', 'hotfix/', 'refactor/', 'chore/', 'docs/'];
+          if (patterns.some((p) => branchName.startsWith(p))) {
+            return primaryBranchForFilter;
+          }
+          if (!branchName || branchName === primaryBranchForFilter) {
+            return primaryBranchForFilter;
+          }
+          return branchName;
+        };
+
         const backlogFeatures = currentFeatures.filter((f) => {
           if (f.status !== 'backlog') return false;
 
-          const featureBranch = f.branchName;
+          const featureTargetBranch = getEffectiveTargetBranch(f);
 
-          // Features without branchName are considered unassigned (show only on primary worktree)
-          if (!featureBranch) {
-            // No branch assigned - show only when viewing primary worktree
+          // Features without targetBranch show only on primary worktree view
+          if (!featureTargetBranch) {
             const isViewingPrimary = currentWorktreePath === null;
             return isViewingPrimary;
           }
 
           if (currentWorktreeBranch === null) {
-            // We're viewing main but branch hasn't been initialized yet
-            // Show features assigned to primary worktree's branch
+            // Viewing main but branch hasn't initialized yet
             return currentProject.path
-              ? isPrimaryWorktreeBranch(currentProject.path, featureBranch)
+              ? isPrimaryWorktreeBranch(currentProject.path, featureTargetBranch)
               : false;
           }
 
-          // Match by branch name
-          return featureBranch === currentWorktreeBranch;
+          // Match by target branch
+          return featureTargetBranch === currentWorktreeBranch;
         });
 
         if (backlogFeatures.length === 0) {
@@ -1076,6 +1097,9 @@ export function BoardView() {
             onDetailLevelChange={setKanbanCardDetailLevel}
             boardViewMode={boardViewMode}
             onBoardViewModeChange={setBoardViewMode}
+            kanbanFilterMode={kanbanFilterMode}
+            onKanbanFilterModeChange={setKanbanFilterMode}
+            useWorktrees={useWorktrees}
           />
         </div>
         {/* View Content - Kanban or Graph */}
@@ -1117,6 +1141,7 @@ export function BoardView() {
             suggestionsCount={suggestionsCount}
             onArchiveAllVerified={() => setShowArchiveAllVerifiedDialog(true)}
             onDeleteAllBacklog={() => setShowDeleteAllBacklogDialog(true)}
+            currentViewBranch={currentWorktreeBranch || undefined}
           />
         ) : (
           <GraphView

@@ -80,7 +80,7 @@ interface AddFeatureDialogProps {
     model: AgentModel;
     planningModel?: AgentModel;
     thinkingLevel: ThinkingLevel;
-    branchName: string; // Can be empty string to use current branch
+    targetBranch: string; // Branch this work will merge into (e.g., 'main')
     priority: number;
     planningMode: PlanningMode;
     requirePlanApproval: boolean;
@@ -273,14 +273,13 @@ export function AddFeatureDialog({
       model: selectedModel,
       planningModel: newFeature.planningModel,
       thinkingLevel: normalizedThinking,
-      branchName: finalBranchName,
+      targetBranch: finalBranchName, // Branch this work will merge into
       priority: newFeature.priority,
       planningMode,
       requirePlanApproval,
       // In spawn mode, automatically add parent as dependency
       dependencies: isSpawnMode && parentFeature ? [parentFeature.id] : undefined,
       implementationEndpointPreset: newFeature.implementationEndpointPreset,
-      implementationEndpointUrl: newFeature.implementationEndpointUrl,
       enabledMcpServers,
       worktreeCategory: useWorktrees ? worktreeCategory : undefined,
     });

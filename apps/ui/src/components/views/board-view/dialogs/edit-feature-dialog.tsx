@@ -75,7 +75,7 @@ interface EditFeatureDialogProps {
       thinkingLevel: ThinkingLevel;
       imagePaths: DescriptionImagePath[];
       textFilePaths: DescriptionTextFilePath[];
-      branchName: string; // Can be empty string to use current branch
+      targetBranch: string; // Branch this work will merge into (can be empty for primary)
       priority: number;
       planningMode?: PlanningMode;
       requirePlanApproval?: boolean;
@@ -194,7 +194,7 @@ export function EditFeatureDialog({
       thinkingLevel: normalizedThinking,
       imagePaths: editingFeature.imagePaths ?? [],
       textFilePaths: editingFeature.textFilePaths ?? [],
-      branchName: finalBranchName,
+      targetBranch: finalBranchName, // Branch this work will merge into
       priority: editingFeature.priority ?? 2,
       planningMode,
       requirePlanApproval,
